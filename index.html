@@ -29,6 +29,7 @@
   ============================================================================
 -->
 <link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -152,7 +153,21 @@ body {
 .input-row:focus-within { border-color: var(--bs-green); box-shadow: 0 0 0 3px var(--bs-green-glow); }
 .input-field { flex: 1; background: transparent; border: none; color: var(--aibios-text); font-size: 14.5px; font-weight: 500; outline: none; font-family: inherit; }
 .input-field::placeholder { color: var(--aibios-text-subtle); font-weight: 500; }
-.input-icon-btn { background: transparent; color: var(--aibios-text-subtle); border: none; cursor: not-allowed; font-size: 17px; opacity: 0.6; display: flex; }
+.input-icon-btn { background: transparent; color: var(--aibios-text-subtle); border: none; cursor: pointer; font-size: 17px; opacity: 0.85; display: flex; transition: color 200ms var(--ease), opacity 200ms var(--ease); }
+.input-icon-btn:hover { color: var(--bs-green); opacity: 1; }
+.bubble p { margin: 0 0 9px; } .bubble p:last-child { margin-bottom: 0; }
+.bubble ul, .bubble ol { margin: 6px 0 9px 20px; } .bubble li { margin-bottom: 3px; }
+.bubble strong { color: #fff; font-weight: 800; }
+.bubble h1,.bubble h2,.bubble h3 { font-size: 15px; font-weight: 800; margin: 10px 0 6px; color: #fff; }
+.bubble code { background: var(--aibios-bg); color: var(--bs-green); padding: 1px 6px; border-radius: 4px; font-size: 12.5px; font-family: ui-monospace, monospace; }
+.bubble pre { background: var(--aibios-bg); border: 1px solid var(--aibios-border); border-radius: 8px; padding: 12px; overflow-x: auto; margin: 8px 0; }
+.bubble pre code { background: none; padding: 0; }
+.bubble a { color: var(--bs-green); }
+.bubble table { width:100%; border-collapse: collapse; margin: 8px 0; font-size: 13px; }
+.bubble th, .bubble td { border: 1px solid var(--aibios-border); padding: 6px 9px; text-align: left; }
+.attach-wrap { padding: 0 24px; }
+.attach-chip { display: inline-flex; align-items: center; gap: 7px; background: var(--aibios-surface-2); border: 1px solid var(--aibios-border-soft); border-radius: 8px; padding: 6px 11px; font-size: 12px; font-weight: 600; color: var(--aibios-text-muted); margin-bottom: 8px; }
+.attach-chip .x { cursor: pointer; color: var(--aibios-text-subtle); } .attach-chip .x:hover { color: #ff6b6b; }
 .send-btn {
   font-family: inherit; font-size: 12.5px; font-weight: 800; letter-spacing: 0.3px; padding: 9px 18px;
   background: var(--bs-green-core); color: #fff; border: none; border-radius: 7px; cursor: pointer;
@@ -179,7 +194,7 @@ body {
   <div class="widget-status">
     <span class="status-dot" id="modelStatus">Sonnet 4.6</span>
     <span class="status-divider">|</span>
-    <span id="budget">$3.40 of $10 used this month</span>
+    <span id="budget">Internal testing · usage monitored</span>
   </div>
 </div>
 
@@ -205,9 +220,11 @@ body {
 </div>
 
 <div class="input-bar">
+  <div class="attach-wrap" id="attachWrap"></div>
   <div class="input-row">
     <input type="text" class="input-field" id="input" placeholder="Ask anything, or pick a mode above...">
-    <button class="input-icon-btn" title="Attach a file (Phase 2)"><i class="ti ti-paperclip"></i></button>
+    <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.webp,.gif" style="display:none">
+    <button class="input-icon-btn" id="clipBtn" title="Attach a PDF or image"><i class="ti ti-paperclip"></i></button>
     <button class="send-btn" id="sendBtn">SEND</button>
   </div>
   <div class="input-meta">
@@ -274,13 +291,41 @@ body {
   input.addEventListener("keydown", e => { if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); send(); }});
   sendBtn.addEventListener("click", send);
 
+  // --- File attachment ---
+  let attached = null; // { name, mediaType, data(base64), kind: 'image'|'document' }
+  const fileInput = $("fileInput"), clipBtn = $("clipBtn"), attachWrap = $("attachWrap");
+  clipBtn.addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", async () => {
+    const f = fileInput.files[0]; if(!f) return;
+    if (f.size > 5 * 1024 * 1024) { alert("Please keep files under 5 MB."); fileInput.value=""; return; }
+    const b64 = await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result.split(",")[1]);
+      r.onerror = rej; r.readAsDataURL(f);
+    });
+    const isPdf = f.type === "application/pdf";
+    attached = { name: f.name, mediaType: f.type, data: b64, kind: isPdf ? "document" : "image" };
+    renderAttachChip();
+    fileInput.value = "";
+  });
+  function renderAttachChip(){
+    attachWrap.innerHTML = "";
+    if(!attached) return;
+    const chip = document.createElement("div"); chip.className = "attach-chip";
+    chip.innerHTML = '<i class="ti ti-paperclip"></i>' + attached.name + ' <span class="x" title="Remove">✕</span>';
+    chip.querySelector(".x").onclick = () => { attached = null; renderAttachChip(); };
+    attachWrap.appendChild(chip);
+  }
+
   function bubble(role, text){
     if (welcome.parentNode) welcome.remove();
     const m = document.createElement("div"); m.className = "message " + role;
     const av = document.createElement("div");
     av.className = "avatar " + (role==="assistant" ? "avatar-assistant" : "avatar-user");
     av.textContent = role==="assistant" ? "B" : (DEMO_USER.name[0]||"M");
-    const bub = document.createElement("div"); bub.className="bubble"; bub.textContent = text;
+    const bub = document.createElement("div"); bub.className="bubble";
+    if (role === "assistant" && window.marked) { bub.innerHTML = marked.parse(text); }
+    else { bub.textContent = text; }
     if (role==="assistant"){
       const acts = document.createElement("div"); acts.className="message-actions";
       acts.innerHTML =
@@ -313,8 +358,8 @@ body {
   // CLOUDFLARE — paste your Worker URL and shared password below.
   // No API key here; the Worker holds it. Safe to share/host this file.
   // ==========================================================================
-  const WORKER_URL = "https://brandstar-assistant.sethrand.workers.dev/";        // <-- e.g. "https://brandstar-assistant.you.workers.dev"
-  const SHARED_PASSWORD = "WhateverItTakes";   // <-- same phrase you set as SHARED_PASSWORD in the Worker
+  const WORKER_URL = "";        // <-- e.g. "https://brandstar-assistant.you.workers.dev"
+  const SHARED_PASSWORD = "";   // <-- same phrase you set as SHARED_PASSWORD in the Worker
 
   async function send(){
     const text = input.value.trim(); if(!text) return;
@@ -323,8 +368,23 @@ body {
       bubble("assistant", "Worker URL not set yet. Open this file in a text editor, paste your Cloudflare Worker URL into WORKER_URL (and your shared password into SHARED_PASSWORD) near the bottom, save, and reopen.");
       input.value=""; return;
     }
-    bubble("user", text); history.push({role:"user", content:text});
-    input.value=""; sendBtn.disabled=true; typing(true);
+    // Build the user turn — with attachment if present
+    let userContent;
+    if (attached) {
+      const block = attached.kind === "document"
+        ? { type:"document", source:{ type:"base64", media_type: attached.mediaType, data: attached.data } }
+        : { type:"image", source:{ type:"base64", media_type: attached.mediaType, data: attached.data } };
+      userContent = [ block, { type:"text", text: text || "Please review the attached file." } ];
+    } else {
+      userContent = text;
+    }
+    const userLabel = attached ? (text ? text + "  📎 " + attached.name : "📎 " + attached.name) : text;
+    bubble("user", userLabel);
+    history.push({ role:"user", content: userContent });
+    input.value=""; sendBtn.disabled=true;
+    const hadAttachment = !!attached;
+    attached = null; renderAttachChip();
+    typing(true);
 
     const system =
       "You are the BrandStar AI Assistant, embedded in the AIBIOS portal for BrandStar staff. " +
@@ -347,6 +407,9 @@ body {
       (DIVISION_CONTEXT[DEMO_USER.division]||"") + " " + MODES[mode].sys;
 
     try {
+      // Stream when it's plain chat; fall back to non-streaming when a file is
+      // attached or tools may fire (HubSpot tool-use needs the full response).
+      const canStream = !hadAttachment;
       const res = await fetch(WORKER_URL, {
         method:"POST",
         headers:{ "Content-Type":"application/json" },
@@ -354,16 +417,77 @@ body {
           password: SHARED_PASSWORD,
           useOpus,
           system,
+          stream: canStream,
           messages: history
         })
       });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      typing(false); bubble("assistant", data.reply || "(No response)");
-      history.push({role:"assistant", content:data.reply});
+
+      const ctype = res.headers.get("content-type") || "";
+      if (canStream && ctype.includes("text/event-stream")) {
+        // Live streaming render
+        typing(false);
+        const { bub } = makeAssistantBubble();
+        let acc = "";
+        const reader = res.body.getReader();
+        const dec = new TextDecoder();
+        let buf = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream:true });
+          const lines = buf.split("\n"); buf = lines.pop();
+          for (const line of lines) {
+            if (!line.startsWith("data:")) continue;
+            const payload = line.slice(5).trim();
+            if (!payload || payload === "[DONE]") continue;
+            try {
+              const evt = JSON.parse(payload);
+              if (evt.type === "content_block_delta" && evt.delta?.text) {
+                acc += evt.delta.text;
+                bub.innerHTML = window.marked ? marked.parse(acc) : acc;
+                thread.scrollTop = thread.scrollHeight;
+              }
+            } catch {}
+          }
+        }
+        finalizeAssistantBubble(bub, acc);
+        history.push({ role:"assistant", content: acc });
+      } else {
+        // Non-streaming (attachment or tool path)
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        typing(false); bubble("assistant", data.reply || "(No response)");
+        history.push({ role:"assistant", content: data.reply });
+      }
     } catch(err){
       typing(false); bubble("assistant", "Couldn't reach the assistant: " + err.message + "\n\nCheck the Worker URL and that the shared password matches what you set in Cloudflare.");
     } finally { sendBtn.disabled=false; input.focus(); }
+  }
+
+  // Helpers for streaming render
+  function makeAssistantBubble(){
+    if (welcome.parentNode) welcome.remove();
+    const m = document.createElement("div"); m.className = "message assistant";
+    const av = document.createElement("div"); av.className = "avatar avatar-assistant"; av.textContent = "B";
+    const bub = document.createElement("div"); bub.className = "bubble";
+    m.appendChild(av); m.appendChild(bub); thread.appendChild(m); thread.scrollTop = thread.scrollHeight;
+    return { m, bub };
+  }
+  function finalizeAssistantBubble(bub, text){
+    const acts = document.createElement("div"); acts.className="message-actions";
+    acts.innerHTML =
+      '<button class="action-btn" data-a="copy"><i class="ti ti-copy"></i>Copy</button>'+
+      '<button class="action-btn" data-a="save"><i class="ti ti-bookmark"></i>Save chat</button>'+
+      '<button class="action-btn" data-a="regen"><i class="ti ti-refresh"></i>Regenerate</button>'+
+      '<button class="action-btn action-btn-opus" data-a="opus"><i class="ti ti-sparkles"></i>Use Opus 4.8 for deeper analysis</button>';
+    acts.addEventListener("click", ev => {
+      const btn = ev.target.closest(".action-btn"); if(!btn) return;
+      const a = btn.dataset.a;
+      if(a==="copy"){ navigator.clipboard.writeText(text); btn.innerHTML='<i class="ti ti-check"></i>Copied'; }
+      if(a==="save"){ btn.innerHTML='<i class="ti ti-check"></i>Saved'; }
+      if(a==="opus"){ useOpus=true; modelStatus.textContent="Opus 4.8"; btn.innerHTML='<i class="ti ti-sparkles"></i>Opus 4.8 on'; }
+    });
+    bub.appendChild(acts);
   }
 </script>
 </body>
