@@ -17,6 +17,12 @@
     3. Paste the same SHARED_PASSWORD you set in the Worker into SHARED_PASSWORD below.
        (This is a light gate for a few testers — not high security. Don't reuse
         a sensitive password here.)
+
+  FILE SUPPORT:
+    - PDF and images: sent to Claude as native document/image blocks.
+    - CSV: read as plain text in the browser and embedded in the message, so
+      Claude can summarize, total, dedupe, compare, and reformat the data.
+      (xlsx is NOT supported here — export to CSV first.)
   ============================================================================
   INTEGRATION SEAMS FOR MARK — search "// >>> MARK:"
     1. AUTH      — DEMO_USER -> Entra ID claims (name, division)
@@ -223,8 +229,8 @@ body {
   <div class="attach-wrap" id="attachWrap"></div>
   <div class="input-row">
     <input type="text" class="input-field" id="input" placeholder="Ask anything, or pick a mode above...">
-    <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.webp,.gif" style="display:none">
-    <button class="input-icon-btn" id="clipBtn" title="Attach a PDF or image"><i class="ti ti-paperclip"></i></button>
+    <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.csv" style="display:none">
+    <button class="input-icon-btn" id="clipBtn" title="Attach a PDF, image, or CSV"><i class="ti ti-paperclip"></i></button>
     <button class="send-btn" id="sendBtn">SEND</button>
   </div>
   <div class="input-meta">
@@ -292,12 +298,35 @@ body {
   sendBtn.addEventListener("click", send);
 
   // --- File attachment ---
-  let attached = null; // { name, mediaType, data(base64), kind: 'image'|'document' }
+  // attached shapes:
+  //   PDF/image: { name, mediaType, data(base64), kind: 'document'|'image' }
+  //   CSV:       { name, kind: 'csv', text }
+  let attached = null;
   const fileInput = $("fileInput"), clipBtn = $("clipBtn"), attachWrap = $("attachWrap");
   clipBtn.addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", async () => {
     const f = fileInput.files[0]; if(!f) return;
     if (f.size > 5 * 1024 * 1024) { alert("Please keep files under 5 MB."); fileInput.value=""; return; }
+
+    const isCsv = f.name.toLowerCase().endsWith(".csv") || f.type === "text/csv";
+    if (isCsv) {
+      // CSV is plain text — read it directly, no base64. Claude works with the raw rows.
+      const textData = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result);
+        r.onerror = rej; r.readAsText(f);
+      });
+      // Guardrail: very large CSVs won't fit in one turn. ~200k chars is a safe ceiling.
+      if (textData.length > 200000) {
+        alert("That CSV is quite large and may not fit in one message. Try a smaller export or a single sheet.");
+        fileInput.value=""; return;
+      }
+      attached = { name: f.name, kind: "csv", text: textData };
+      renderAttachChip();
+      fileInput.value = "";
+      return;
+    }
+
     const b64 = await new Promise((res, rej) => {
       const r = new FileReader();
       r.onload = () => res(r.result.split(",")[1]);
@@ -358,8 +387,8 @@ body {
   // CLOUDFLARE — paste your Worker URL and shared password below.
   // No API key here; the Worker holds it. Safe to share/host this file.
   // ==========================================================================
-  const WORKER_URL = "https://bs-widget-relay.azurewebsites.net/api/widget-chat";        // <-- e.g. "https://brandstar-assistant.you.workers.dev"
-  const SHARED_PASSWORD = "BrandStar2026 go time";   // <-- same phrase you set as SHARED_PASSWORD in the Worker
+  const WORKER_URL = "https://brandstar-assistant.sethrand.workers.dev";        // <-- e.g. "https://brandstar-assistant.you.workers.dev"
+  const SHARED_PASSWORD = "BrandStar2026 go time";   // <-- MUST match SHARED_PASSWORD in the Cloudflare Worker settings exactly
 
   async function send(){
     const text = input.value.trim(); if(!text) return;
@@ -370,7 +399,11 @@ body {
     }
     // Build the user turn — with attachment if present
     let userContent;
-    if (attached) {
+    if (attached && attached.kind === "csv") {
+      // Embed CSV contents as text so Claude can read and work with the data.
+      const csvBlock = "The user attached a CSV file named \"" + attached.name + "\". Here are its contents:\n\n```csv\n" + attached.text + "\n```";
+      userContent = csvBlock + "\n\n" + (text || "Please review the attached CSV.");
+    } else if (attached) {
       const block = attached.kind === "document"
         ? { type:"document", source:{ type:"base64", media_type: attached.mediaType, data: attached.data } }
         : { type:"image", source:{ type:"base64", media_type: attached.mediaType, data: attached.data } };
@@ -402,7 +435,7 @@ body {
       "NINE SHOWS (hosts/networks/reach): Military Makeover with Montel — host Montel Williams (Marine + Navy vet); veteran home renovations; Lifetime weekday mornings + American Forces Network (600K subscribers worldwide); plus Operation Career spinoff. The Balancing Act — hosts Mario and Courtney Lopez; lifestyle morning show on Lifetime since 2001 (longest-running); audience ~74% women, $87K median HHI. Designing Spaces — award-winning home improvement; Lifetime weekdays 7:30-8am ET/PT + 300+ syndicated airings on 150+ stations. Health Uncensored with Dr. Drew — host Dr. Drew Pinsky (board-certified Internal/Addiction Medicine); airs on FOX Sundays; ~58M TV households; topics span mental health, nutrition, AI, disease prevention. Access Health — health & wellness. Inside the Blueprint — innovation discovery. BELatina — lifestyle. Behind the Mystery — rare disease/health. " +
       "SEGMENT MODEL (how brands participate): shows are 'by invitation only.' A participating brand gets an integrated branded segment within a 30-min program, a digital version with full licensing/reproduction rights, a :30 digital short for social, a dedicated landing page on the show site, coordinated social, distribution on BrandStar.TV (24-hr OTT) and the Lifetime Live Feed (Hulu+Live TV, fuboTV, Philo, Sling), plus PR where applicable. One segment can extend into full-funnel growth across the other divisions. " +
       "ECOSYSTEM PITCH: 'Hire one partner, not ten.' A brand can be discovered on a show (Entertainment), have content produced (Studios), get full-funnel marketing (Marketing/Digital/Kreps/Britton/Trefoil), and customer communication handled (Connect) — all under one roof. Cross-division collaboration is the core BrandStar advantage. " +
-      "You are a capable research and knowledge assistant as well as a BrandStar expert. Answer general knowledge questions, research topics (for TV episodes, market trends, prospective clients not yet in our CRM, etc.), and help with writing and analysis using your full knowledge — don't refuse a question just because it isn't about BrandStar. Use the HubSpot tools when the question is about existing BrandStar deals, contacts, or companies. For current pricing, internal client lists, or staff details specifically, don't guess from memory — note you'd confirm against current systems. When researching prospects or topics from your own knowledge, be helpful and thorough, and flag anything that should be verified. " +
+      "You are a capable research and knowledge assistant as well as a BrandStar expert. Answer general knowledge questions, research topics (for TV episodes, market trends, prospective clients not yet in our CRM, etc.), and help with writing and analysis using your full knowledge — don't refuse a question just because it isn't about BrandStar. Use the HubSpot tools when the question is about existing BrandStar deals, contacts, or companies. When the user attaches a CSV, work directly with the data — summarize it, total or compute columns, find duplicates or anomalies, compare rows, or reformat as asked. For current pricing, internal client lists, or staff details specifically, don't guess from memory — note you'd confirm against current systems. When researching prospects or topics from your own knowledge, be helpful and thorough, and flag anything that should be verified. " +
       // --- end Knowledge Layer ---
       (DIVISION_CONTEXT[DEMO_USER.division]||"") + " " + MODES[mode].sys;
 
