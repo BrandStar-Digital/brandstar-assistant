@@ -439,10 +439,11 @@ body {
       // --- end Knowledge Layer ---
       (DIVISION_CONTEXT[DEMO_USER.division]||"") + " " + MODES[mode].sys;
 
-    try {
-      // Stream when it's plain chat; fall back to non-streaming when a file is
-      // attached or tools may fire (HubSpot tool-use needs the full response).
-      const canStream = !hadAttachment;
+try {
+      // Tools (HubSpot) can fire on ANY text question, and the streaming path
+      // can't run the tool loop — so streaming is disabled while tools are live.
+      // Re-enable per-turn only once the relay buffers tool turns server-side.
+      const canStream = false;
       const res = await fetch(WORKER_URL, {
         method:"POST",
         headers:{ "Content-Type":"application/json" },
