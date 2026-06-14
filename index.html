@@ -307,15 +307,16 @@ body {
   async function msSignIn(){
     if (!msalApp) { alert("Microsoft sign-in isn't available right now — the sign-in library didn't load. Refresh the page and try again."); return; }
     try {
-      const resp = await msalApp.loginPopup({ scopes: GRAPH_SCOPES });
-      if (resp && resp.account) { msAccount = resp.account; renderMsAuth(); }
-    } catch (e) { console.warn("Sign-in cancelled or failed:", e); }
+      // Redirect flow: navigates the tab to Microsoft login, then returns to the
+      // widget signed in. More reliable than popups on GitHub Pages (popups can
+      // be blocked or mis-route, which surfaces as a false "user_cancelled").
+      await msalApp.loginRedirect({ scopes: GRAPH_SCOPES });
+    } catch (e) { console.warn("Sign-in failed:", e); }
   }
 
   function msSignOut(){
     if (!msalApp || !msAccount) return;
-    msalApp.logoutPopup({ account: msAccount }).catch(()=>{});
-    msAccount = null; renderMsAuth();
+    msalApp.logoutRedirect({ account: msAccount }).catch(()=>{});
   }
 
   // Returns a fresh Graph access token, or null if not signed in.
@@ -326,8 +327,9 @@ body {
       return r.accessToken;
     } catch (e) {
       try {
-        const r = await msalApp.acquireTokenPopup({ scopes: GRAPH_SCOPES, account: msAccount });
-        return r.accessToken;
+        // Silent failed (e.g. consent needed) — fall back to a full redirect.
+        await msalApp.acquireTokenRedirect({ scopes: GRAPH_SCOPES, account: msAccount });
+        return null; // page will navigate; token resolves after redirect returns
       } catch (e2) { console.warn("Token acquisition failed:", e2); return null; }
     }
   }
