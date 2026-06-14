@@ -209,7 +209,7 @@ body {
     <div class="widget-logo">BS</div>
     <div>
       <div class="widget-title">BrandStar AI Assistant</div>
-      <div class="widget-greeting" id="greeting">Hi · <strong>BrandStar</strong></div>
+      <div class="widget-greeting" id="greeting">Welcome <strong>BrandStar Ambassador</strong></div>
     </div>
   </div>
   <div class="widget-status">
@@ -414,16 +414,15 @@ body {
         suggestRow = $("suggestRow");
 
   // Greeting uses the real Microsoft-signed-in profile when available: real name
-  // and real division (from the Graph department field). Falls back gracefully —
-  // demo name and neutral "BrandStar" label — when not signed in or when a
-  // user's department field is blank.
+  // and real division (from the Graph department field). Before sign-in, shows a
+  // neutral placeholder ("Welcome BrandStar Ambassador") rather than any name.
   function currentDisplayName(){
     if (userProfile.name) return userProfile.name;
     if (msAccount && (msAccount.name || msAccount.username)) {
       const n = msAccount.name || msAccount.username;
       return n.includes("@") ? n.split("@")[0] : n;
     }
-    return DEMO_USER.name;
+    return null; // not signed in
   }
   // Returns the division label to show in the greeting, e.g. "BrandStar Entertainment".
   // Uses the real department when it maps to a known division; otherwise neutral.
@@ -431,12 +430,17 @@ body {
     const key = divisionKeyFromDepartment(userProfile.department);
     if (key) return "BrandStar " + key;
     if (userProfile.department) return userProfile.department; // show raw dept if it doesn't map
-    if (!msAccount) return "BrandStar " + DEMO_USER.division;  // demo state
     return "BrandStar"; // signed in but no department on profile
   }
   function updateGreeting(){
     const g = document.getElementById("greeting"); if (!g) return;
-    g.innerHTML = "Hi " + currentDisplayName() + " · <strong>" + currentDivisionLabel() + "</strong>";
+    const name = currentDisplayName();
+    if (!name) {
+      // Pre-sign-in placeholder.
+      g.innerHTML = "Welcome <strong>BrandStar Ambassador</strong>";
+    } else {
+      g.innerHTML = "Hi " + name + " · <strong>" + currentDivisionLabel() + "</strong>";
+    }
   }
   updateGreeting();
   // Start Microsoft auth now that all core consts/helpers exist.
