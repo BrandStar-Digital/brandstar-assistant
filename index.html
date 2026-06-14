@@ -36,6 +36,7 @@
 -->
 <link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -185,6 +186,20 @@ body {
 .input-meta { display: flex; align-items: center; justify-content: space-between; margin-top: 11px; font-size: 10.5px; font-weight: 600; color: var(--aibios-text-subtle); }
 .input-meta i { font-size: 13px; vertical-align: -1px; margin-right: 3px; color: var(--bs-green); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+/* Microsoft sign-in */
+.ms-signin-btn {
+  font-family: inherit; font-size: 11.5px; font-weight: 700; letter-spacing: 0.3px;
+  padding: 7px 13px; background: var(--aibios-surface-2); color: var(--aibios-text);
+  border: 1px solid var(--aibios-border-soft); border-radius: 7px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 7px;
+  transition: border-color 200ms var(--ease), background 200ms var(--ease);
+}
+.ms-signin-btn:hover { border-color: var(--bs-green); background: rgba(0,194,133,0.08); }
+.ms-signin-btn .ms-logo { width: 13px; height: 13px; display: inline-block; }
+.ms-user-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--aibios-text-muted); }
+.ms-user-chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--bs-green); box-shadow: 0 0 8px var(--bs-green); }
+.ms-user-chip .signout { cursor: pointer; color: var(--aibios-text-subtle); text-decoration: underline; }
+.ms-user-chip .signout:hover { color: var(--aibios-text); }
 </style>
 </head>
 <body>
@@ -198,6 +213,7 @@ body {
     </div>
   </div>
   <div class="widget-status">
+    <span id="msAuthSlot"></span>
     <span class="status-dot" id="modelStatus">Sonnet 4.6</span>
     <span class="status-divider">|</span>
     <span id="budget">Internal testing · usage monitored</span>
@@ -245,6 +261,85 @@ body {
   // >>> MARK: ENDPOINT — Azure Function proxy (holds API key via Key Vault).
   const CHAT_ENDPOINT = "/api/claude/chat";
   const DEMO_MODE = true; // true = direct call for in-claude.ai preview; false = Azure Function
+
+  // ==========================================================================
+  // MICROSOFT SSO (MSAL.js) — M365 connector sign-in
+  // Each user signs in with their own Microsoft account. We acquire a Graph
+  // token for the delegated scopes and send it to the relay as body.msGraphToken.
+  // The relay reads only that user's own mail/calendar/profile.
+  // App registration: "BrandStar AI Widget" (SPA/PKCE), tenant consent already granted.
+  // ==========================================================================
+  const MSAL_CONFIG = {
+    auth: {
+      clientId: "91109e41-a61b-4198-8b2b-4bdeb406000e",
+      authority: "https://login.microsoftonline.com/organizations",
+      redirectUri: window.location.origin + window.location.pathname
+    },
+    cache: { cacheLocation: "sessionStorage", storeAuthStateInCookie: false }
+  };
+  const GRAPH_SCOPES = ["User.Read", "Mail.Read", "Calendars.Read"];
+
+  let msalApp = null, msAccount = null;
+  try { msalApp = new msal.PublicClientApplication(MSAL_CONFIG); } catch (e) { console.warn("MSAL init failed:", e); }
+
+  async function msInit(){
+    if (!msalApp) return;
+    try {
+      await msalApp.initialize();
+      const resp = await msalApp.handleRedirectPromise();
+      if (resp && resp.account) { msAccount = resp.account; }
+      else {
+        const accts = msalApp.getAllAccounts();
+        if (accts.length) msAccount = accts[0];
+      }
+    } catch (e) { console.warn("MSAL redirect handling failed:", e); }
+    renderMsAuth();
+  }
+
+  async function msSignIn(){
+    if (!msalApp) { alert("Microsoft sign-in isn't available in this preview."); return; }
+    try {
+      const resp = await msalApp.loginPopup({ scopes: GRAPH_SCOPES });
+      if (resp && resp.account) { msAccount = resp.account; renderMsAuth(); }
+    } catch (e) { console.warn("Sign-in cancelled or failed:", e); }
+  }
+
+  function msSignOut(){
+    if (!msalApp || !msAccount) return;
+    msalApp.logoutPopup({ account: msAccount }).catch(()=>{});
+    msAccount = null; renderMsAuth();
+  }
+
+  // Returns a fresh Graph access token, or null if not signed in.
+  async function getGraphToken(){
+    if (!msalApp || !msAccount) return null;
+    try {
+      const r = await msalApp.acquireTokenSilent({ scopes: GRAPH_SCOPES, account: msAccount });
+      return r.accessToken;
+    } catch (e) {
+      try {
+        const r = await msalApp.acquireTokenPopup({ scopes: GRAPH_SCOPES, account: msAccount });
+        return r.accessToken;
+      } catch (e2) { console.warn("Token acquisition failed:", e2); return null; }
+    }
+  }
+
+  function renderMsAuth(){
+    const slot = document.getElementById("msAuthSlot");
+    if (!slot) return;
+    if (msAccount) {
+      const name = msAccount.name || msAccount.username || "Signed in";
+      slot.innerHTML = '<span class="ms-user-chip"><span class="dot"></span>M365: ' + name +
+        ' <span class="signout" id="msSignOut">Sign out</span></span><span class="status-divider">|</span>';
+      const so = document.getElementById("msSignOut"); if (so) so.onclick = msSignOut;
+    } else {
+      slot.innerHTML = '<button class="ms-signin-btn" id="msSignInBtn">' +
+        '<svg class="ms-logo" viewBox="0 0 23 23" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="10" height="10" fill="#F25022"/><rect x="12" y="1" width="10" height="10" fill="#7FBA00"/><rect x="1" y="12" width="10" height="10" fill="#00A4EF"/><rect x="12" y="12" width="10" height="10" fill="#FFB900"/></svg>' +
+        'Sign in with Microsoft</button><span class="status-divider">|</span>';
+      const btn = document.getElementById("msSignInBtn"); if (btn) btn.onclick = msSignIn;
+    }
+  }
+  msInit();
 
   const MODES = {
     research:  { banner: "Research mode active. I'll find sources, summarize findings, and flag what needs verification.", sys: "RESEARCH mode. Gather, analyze, synthesize. Surface what's known, what's uncertain, what to verify." },
@@ -444,6 +539,9 @@ try {
       // can't run the tool loop — so streaming is disabled while tools are live.
       // Re-enable per-turn only once the relay buffers tool turns server-side.
       const canStream = false;
+      // M365: if the user has signed in with Microsoft, attach a fresh Graph
+      // token so the relay can answer mail/calendar/profile questions for them.
+      const msGraphToken = await getGraphToken();
       const res = await fetch(WORKER_URL, {
         method:"POST",
         headers:{ "Content-Type":"application/json" },
@@ -452,7 +550,8 @@ try {
           useOpus,
           system,
           stream: canStream,
-          messages: history
+          messages: history,
+          msGraphToken: msGraphToken || undefined
         })
       });
 
