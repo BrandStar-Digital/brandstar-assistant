@@ -209,7 +209,7 @@ body {
     <div class="widget-logo">BS</div>
     <div>
       <div class="widget-title">BrandStar AI Assistant</div>
-      <div class="widget-greeting" id="greeting">Hi Mark · <strong>BrandStar Entertainment</strong></div>
+      <div class="widget-greeting" id="greeting">Hi · <strong>BrandStar</strong></div>
     </div>
   </div>
   <div class="widget-status">
@@ -302,6 +302,39 @@ body {
       }
     } catch (e) { console.warn("MSAL redirect handling failed:", e); }
     renderMsAuth();
+    if (msAccount) { fetchUserProfile(); }
+  }
+
+  // Real signed-in profile, populated from Microsoft Graph /me after sign-in.
+  // Falls back to demo values until/unless Graph returns data.
+  let userProfile = { name: null, department: null, jobTitle: null };
+
+  // Maps a Graph department string to one of our four division keys.
+  // Tolerant: matches on substring so "BrandStar Entertainment", "Entertainment",
+  // "Marketing - Digital", etc. all resolve correctly. Returns null if no match.
+  function divisionKeyFromDepartment(dept){
+    if (!dept) return null;
+    const d = dept.toLowerCase();
+    if (d.includes("entertain")) return "Entertainment";
+    if (d.includes("studio"))    return "Studios";
+    if (d.includes("connect"))   return "Connect";
+    if (d.includes("market") || d.includes("digital") || d.includes("kreps") ||
+        d.includes("britton") || d.includes("trefoil")) return "Marketing";
+    return null;
+  }
+
+  async function fetchUserProfile(){
+    const token = await getGraphToken();
+    if (!token) return;
+    try {
+      const r = await fetch("https://graph.microsoft.com/v1.0/me?$select=displayName,department,jobTitle", {
+        headers: { Authorization: "Bearer " + token }
+      });
+      if (!r.ok) { console.warn("Graph /me returned", r.status); return; }
+      const p = await r.json();
+      userProfile = { name: p.displayName || null, department: p.department || null, jobTitle: p.jobTitle || null };
+      updateGreeting();
+    } catch (e) { console.warn("Profile fetch failed:", e); }
   }
 
   async function msSignIn(){
@@ -336,7 +369,7 @@ body {
 
   function renderMsAuth(){
     const slot = document.getElementById("msAuthSlot");
-    if (!slot) return;
+    if (slot) {
     if (msAccount) {
       const name = msAccount.name || msAccount.username || "Signed in";
       slot.innerHTML = '<span class="ms-user-chip"><span class="dot"></span>M365: ' + name +
@@ -348,8 +381,9 @@ body {
         'Sign in with Microsoft</button><span class="status-divider">|</span>';
       const btn = document.getElementById("msSignInBtn"); if (btn) btn.onclick = msSignIn;
     }
+    }
+    updateGreeting();
   }
-  msInit();
 
   const MODES = {
     research:  { banner: "Research mode active. I'll find sources, summarize findings, and flag what needs verification.", sys: "RESEARCH mode. Gather, analyze, synthesize. Surface what's known, what's uncertain, what to verify." },
@@ -379,7 +413,34 @@ body {
         welcome = $("welcome"), banner = $("modeBanner"), modelStatus = $("modelStatus"),
         suggestRow = $("suggestRow");
 
-  $("greeting").innerHTML = "Hi " + DEMO_USER.name + " · <strong>BrandStar " + DEMO_USER.division + "</strong>";
+  // Greeting uses the real Microsoft-signed-in profile when available: real name
+  // and real division (from the Graph department field). Falls back gracefully —
+  // demo name and neutral "BrandStar" label — when not signed in or when a
+  // user's department field is blank.
+  function currentDisplayName(){
+    if (userProfile.name) return userProfile.name;
+    if (msAccount && (msAccount.name || msAccount.username)) {
+      const n = msAccount.name || msAccount.username;
+      return n.includes("@") ? n.split("@")[0] : n;
+    }
+    return DEMO_USER.name;
+  }
+  // Returns the division label to show in the greeting, e.g. "BrandStar Entertainment".
+  // Uses the real department when it maps to a known division; otherwise neutral.
+  function currentDivisionLabel(){
+    const key = divisionKeyFromDepartment(userProfile.department);
+    if (key) return "BrandStar " + key;
+    if (userProfile.department) return userProfile.department; // show raw dept if it doesn't map
+    if (!msAccount) return "BrandStar " + DEMO_USER.division;  // demo state
+    return "BrandStar"; // signed in but no department on profile
+  }
+  function updateGreeting(){
+    const g = document.getElementById("greeting"); if (!g) return;
+    g.innerHTML = "Hi " + currentDisplayName() + " · <strong>" + currentDivisionLabel() + "</strong>";
+  }
+  updateGreeting();
+  // Start Microsoft auth now that all core consts/helpers exist.
+  msInit();
 
   function renderSuggestions(){
     suggestRow.innerHTML = "";
@@ -456,7 +517,7 @@ body {
     const m = document.createElement("div"); m.className = "message " + role;
     const av = document.createElement("div");
     av.className = "avatar " + (role==="assistant" ? "avatar-assistant" : "avatar-user");
-    av.textContent = role==="assistant" ? "B" : (DEMO_USER.name[0]||"M");
+    av.textContent = role==="assistant" ? "B" : (currentDisplayName()[0] || "U");
     const bub = document.createElement("div"); bub.className="bubble";
     if (role === "assistant" && window.marked) { bub.innerHTML = marked.parse(text); }
     else { bub.textContent = text; }
@@ -524,10 +585,18 @@ body {
     attached = null; renderAttachChip();
     typing(true);
 
+    const userIdentityLine = (userProfile.name)
+      ? ("CURRENT USER: You are speaking with " + userProfile.name +
+         (userProfile.jobTitle ? (", " + userProfile.jobTitle) : "") +
+         (userProfile.department ? (", in " + userProfile.department) : "") +
+         ". Address them by name when natural and tailor answers to their role and division. ")
+      : "";
+
     const system =
       "You are the BrandStar AI Assistant, embedded in the AIBIOS portal for BrandStar staff. " +
       "Voice: confident, story-led, sharp, human, purposeful. Direct, no fluff, no emoji, em dashes welcome. " +
       "Strategic partner, not a vendor. Always 'BrandStar Digital', never 'BSD Digital'. " +
+      userIdentityLine +
       // --- BrandStar Knowledge Layer (sourced from brandstar.com, June 2026) ---
       "ABOUT BRANDSTAR: A full-service marketing and production company founded 2005, HQ in Deerfield Beach FL with a second studio in Hollywood FL. Co-founded by Mark Alfieri (CEO) and Doug Campbell (CRO); parent is O2 Media Inc. Tagline 'We grow brands fast.' Mission: make a positive impact on people's lives — connect people with brands to do life better. Fully integrated production company, marketing agency, and content platform. ~2/3 of Fortune 500 have worked with BrandStar; content reaches ~124M households via Lifetime, FOX Business, Bloomberg; 8,000+ projects completed. " +
       "IDD METHOD: Identify what makes a brand unique, Develop creative that educates and inspires, Distribute across awareness/consideration/conversion. " +
@@ -542,7 +611,7 @@ body {
       "ECOSYSTEM PITCH: 'Hire one partner, not ten.' A brand can be discovered on a show (Entertainment), have content produced (Studios), get full-funnel marketing (Marketing/Digital/Kreps/Britton/Trefoil), and customer communication handled (Connect) — all under one roof. Cross-division collaboration is the core BrandStar advantage. " +
       "You are a capable research and knowledge assistant as well as a BrandStar expert. Answer general knowledge questions, research topics (for TV episodes, market trends, prospective clients not yet in our CRM, etc.), and help with writing and analysis using your full knowledge — don't refuse a question just because it isn't about BrandStar. Use the HubSpot tools when the question is about existing BrandStar deals, contacts, or companies. When the user attaches a CSV, work directly with the data — summarize it, total or compute columns, find duplicates or anomalies, compare rows, or reformat as asked. For current pricing, internal client lists, or staff details specifically, don't guess from memory — note you'd confirm against current systems. When researching prospects or topics from your own knowledge, be helpful and thorough, and flag anything that should be verified. " +
       // --- end Knowledge Layer ---
-      (DIVISION_CONTEXT[DEMO_USER.division]||"") + " " + MODES[mode].sys;
+      (DIVISION_CONTEXT[divisionKeyFromDepartment(userProfile.department) || DEMO_USER.division]||"") + " " + MODES[mode].sys;
 
 try {
       // Tools (HubSpot) can fire on ANY text question, and the streaming path
