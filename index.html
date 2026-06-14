@@ -36,7 +36,7 @@
 -->
 <link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<script src="https://alcdn.msauth.net/browser/2.38.4/js/msal-browser.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -280,9 +280,17 @@ body {
   const GRAPH_SCOPES = ["User.Read", "Mail.Read", "Calendars.Read"];
 
   let msalApp = null, msAccount = null;
-  try { msalApp = new msal.PublicClientApplication(MSAL_CONFIG); } catch (e) { console.warn("MSAL init failed:", e); }
+  const msalReady = (typeof msal !== "undefined" && msal && msal.PublicClientApplication);
+  if (msalReady) {
+    try { msalApp = new msal.PublicClientApplication(MSAL_CONFIG); }
+    catch (e) { console.warn("MSAL init failed:", e); msalApp = null; }
+  } else {
+    console.warn("MSAL library not loaded — sign-in button will show but prompt to retry.");
+  }
 
   async function msInit(){
+    // Always render the button first so a library hiccup never hides sign-in.
+    renderMsAuth();
     if (!msalApp) return;
     try {
       await msalApp.initialize();
@@ -297,7 +305,7 @@ body {
   }
 
   async function msSignIn(){
-    if (!msalApp) { alert("Microsoft sign-in isn't available in this preview."); return; }
+    if (!msalApp) { alert("Microsoft sign-in isn't available right now — the sign-in library didn't load. Refresh the page and try again."); return; }
     try {
       const resp = await msalApp.loginPopup({ scopes: GRAPH_SCOPES });
       if (resp && resp.account) { msAccount = resp.account; renderMsAuth(); }
