@@ -240,6 +240,9 @@ body {
 .preview-close:hover { color: var(--aibios-text); }
 .build-badge{font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#0a7a55;background:rgba(0,168,114,.10);border:1px solid rgba(0,168,114,.28);border-radius:6px;padding:1px 7px;cursor:pointer;white-space:nowrap;}
 .build-badge:hover{background:rgba(0,168,114,.18);}
+.newchat-btn{font-family:inherit;font-size:11px;font-weight:700;letter-spacing:.2px;color:var(--aibios-text-muted);background:transparent;border:1px solid var(--aibios-border-soft);border-radius:6px;padding:3px 9px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;transition:color 200ms var(--ease),border-color 200ms var(--ease),background 200ms var(--ease);}
+.newchat-btn i{font-size:13px;}
+.newchat-btn:hover{color:var(--aibios-text);border-color:var(--bs-green);background:rgba(0,194,133,.08);}
 </style>
 </head>
 <body>
@@ -257,6 +260,8 @@ body {
     <span class="status-dot" id="modelStatus">Sonnet 4.6</span>
     <span class="status-divider">|</span>
     <span id="budget">Internal testing · usage monitored</span>
+    <span class="status-divider">|</span>
+    <button id="newChatBtn" class="newchat-btn" title="Start a new chat (clears this conversation on this device)"><i class="ti ti-plus"></i>New chat</button>
     <span class="status-divider">|</span>
     <span id="buildBadge" class="build-badge" title="Relay build — click to refresh">build …</span>
   </div>
@@ -468,6 +473,94 @@ body {
         welcome = $("welcome"), banner = $("modeBanner"), modelStatus = $("modelStatus"),
         suggestRow = $("suggestRow");
 
+  // ==========================================================================
+  // CONVERSATION PERSISTENCE (frontend-only, localStorage)
+  // Survives refresh and closing the tab on THIS browser/device. The relay is
+  // stateless (we send full messages[] each turn), so storing locally is safe
+  // and owns no secrets — only the visible transcript. Cross-device history is
+  // a V2 relay-backed item; this captures the everyday "I refreshed and lost my
+  // chat" pain entirely on the frontend.
+  //
+  // What we store: the rendered transcript (role + display text) so the thread
+  // can be repainted, AND the model `history` array so the conversation can
+  // continue with full context. Keyed per signed-in user when known, so two
+  // people on a shared machine don't see each other's threads.
+  // ==========================================================================
+  const PERSIST_VERSION = "v1";
+  let transcript = []; // [{ role, text }] — what's visually on screen
+  function persistKey(){
+    const who = (currentDisplayName() || "anon").toLowerCase().replace(/[^a-z0-9]/g, "");
+    return "bsaiwidget_" + PERSIST_VERSION + "_" + who;
+  }
+  function saveConversation(){
+    try {
+      localStorage.setItem(persistKey(), JSON.stringify({
+        savedAt: Date.now(),
+        transcript: transcript,
+        history: history
+      }));
+    } catch (e) { /* storage full or blocked — fail silently, chat still works */ }
+  }
+  function clearConversation(){
+    try { localStorage.removeItem(persistKey()); } catch (e) {}
+    transcript = []; history.length = 0;
+    // Repaint a clean thread with the welcome screen.
+    thread.innerHTML = "";
+    thread.appendChild(welcome);
+    welcome.style.display = "";
+    renderSuggestions();
+  }
+  function restoreConversation(){
+    let raw = null;
+    try { raw = localStorage.getItem(persistKey()); } catch (e) { return false; }
+    if (!raw) return false;
+    let data;
+    try { data = JSON.parse(raw); } catch (e) { return false; }
+    if (!data || !Array.isArray(data.transcript) || !data.transcript.length) return false;
+    // Rehydrate the model context...
+    history.length = 0;
+    if (Array.isArray(data.history)) data.history.forEach(h => history.push(h));
+    // ...and repaint the visible thread.
+    transcript = [];
+    if (welcome.parentNode) welcome.remove();
+    data.transcript.forEach(t => bubble(t.role, t.text, /*skipPersist=*/true));
+    return true;
+  }
+
+  // ==========================================================================
+  // EXPORT / SEND-TO — download a response as .txt or .md, or open an email
+  // draft (mailto:) pre-filled with the response. mailto opens the user's own
+  // mail client; nothing is sent automatically and no relay/M365 write is used.
+  // ==========================================================================
+  function downloadText(filename, text){
+    const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  function exportResponse(text){
+    const stamp = new Date().toISOString().slice(0,10);
+    downloadText("BrandStar-AI-" + stamp + ".md", text);
+  }
+  function emailResponse(text){
+    // mailto has a practical URL-length ceiling (~1800 chars is safe across
+    // clients). For longer responses, put a short note in the body and copy the
+    // full text to the clipboard so the user can paste it in.
+    const subject = "From BrandStar AI Assistant";
+    let body = text;
+    let copiedNote = false;
+    if (body.length > 1800) {
+      body = "Your full response was copied to the clipboard — paste it here (Ctrl/Cmd+V).\n\n--- Preview ---\n" + text.slice(0, 1500) + "…";
+      try { navigator.clipboard.writeText(text); copiedNote = true; } catch (e) {}
+    }
+    const href = "mailto:?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
+    window.location.href = href;
+    return copiedNote;
+  }
+
   // Greeting uses the real Microsoft-signed-in profile when available: real name
   // and real division (from the Graph department field). Before sign-in, shows a
   // neutral placeholder ("Welcome BrandStar Ambassador") rather than any name.
@@ -500,6 +593,21 @@ body {
   updateGreeting();
   // Start Microsoft auth now that all core consts/helpers exist.
   msInit();
+
+  // Restore any prior conversation for this user/device (survives refresh).
+  // Runs against the current persistKey(): anon before sign-in, per-user after.
+  // Because MSAL uses a redirect flow, the post-sign-in load resolves the
+  // per-user key here. If a restore repaints, the welcome screen is replaced.
+  try { restoreConversation(); } catch (e) { /* never block startup on restore */ }
+
+  // New chat: clear this device's saved conversation and reset to a fresh thread.
+  (function(){
+    const nc = document.getElementById("newChatBtn");
+    if (nc) nc.addEventListener("click", function(){
+      if (transcript.length && !confirm("Start a new chat? This clears the current conversation on this device.")) return;
+      clearConversation();
+    });
+  })();
 
   function renderSuggestions(){
     suggestRow.innerHTML = "";
@@ -608,8 +716,11 @@ body {
     setTimeout(() => { this.innerHTML = '<i class="ti ti-copy"></i>Copy'; }, 1500);
   });
 
-  function bubble(role, text){
+  function bubble(role, text, skipPersist){
     if (welcome.parentNode) welcome.remove();
+    // Record into the visible transcript for persistence (unless we're currently
+    // repainting from storage, in which case skipPersist avoids double-recording).
+    if (!skipPersist) { transcript.push({ role: role, text: text }); }
     const m = document.createElement("div"); m.className = "message " + role;
     const av = document.createElement("div");
     av.className = "avatar " + (role==="assistant" ? "avatar-assistant" : "avatar-user");
@@ -625,7 +736,8 @@ body {
       acts.innerHTML =
         previewBtn +
         '<button class="action-btn" data-a="copy"><i class="ti ti-copy"></i>Copy</button>'+
-        '<button class="action-btn" data-a="save"><i class="ti ti-bookmark"></i>Save chat</button>'+
+        '<button class="action-btn" data-a="export"><i class="ti ti-download"></i>Download</button>'+
+        '<button class="action-btn" data-a="email"><i class="ti ti-mail"></i>Email to me</button>'+
         '<button class="action-btn" data-a="regen"><i class="ti ti-refresh"></i>Regenerate</button>'+
         '<button class="action-btn action-btn-opus" data-a="opus"><i class="ti ti-sparkles"></i>Use Opus 4.8 for deeper analysis</button>';
       acts.addEventListener("click", ev => {
@@ -633,12 +745,14 @@ body {
         const a = btn.dataset.a;
         if(a==="preview"){ openPreview(text, "Document preview"); }
         if(a==="copy"){ navigator.clipboard.writeText(text); btn.innerHTML='<i class="ti ti-check"></i>Copied'; }
-        if(a==="save"){ btn.innerHTML='<i class="ti ti-check"></i>Saved'; }
+        if(a==="export"){ exportResponse(text); btn.innerHTML='<i class="ti ti-check"></i>Downloaded'; setTimeout(()=>{ btn.innerHTML='<i class="ti ti-download"></i>Download'; }, 1500); }
+        if(a==="email"){ const copied = emailResponse(text); btn.innerHTML = copied ? '<i class="ti ti-check"></i>Copied + opening' : '<i class="ti ti-check"></i>Opening mail'; setTimeout(()=>{ btn.innerHTML='<i class="ti ti-mail"></i>Email to me'; }, 1800); }
         if(a==="opus"){ useOpus=true; modelStatus.textContent="Opus 4.8"; btn.innerHTML='<i class="ti ti-sparkles"></i>Opus 4.8 on'; }
       });
       bub.appendChild(acts);
     }
     m.appendChild(av); m.appendChild(bub); thread.appendChild(m); thread.scrollTop = thread.scrollHeight;
+    if (!skipPersist) { saveConversation(); }
   }
 
   function typing(on){
@@ -791,12 +905,15 @@ try {
         }
         finalizeAssistantBubble(bub, acc);
         history.push({ role:"assistant", content: acc });
+        transcript.push({ role: "assistant", text: acc }); // streaming path records its own transcript
+        saveConversation();
       } else {
         // Non-streaming (attachment or tool path)
         const data = await res.json();
         if (data.error) throw new Error(data.error);
         typing(false); bubble("assistant", data.reply || "(No response)");
         history.push({ role:"assistant", content: data.reply });
+        saveConversation(); // re-save so history[] (with this assistant turn) is stored
       }
     } catch(err){
       typing(false); bubble("assistant", "Couldn't reach the assistant: " + err.message + "\n\nThis is usually a temporary connection issue — try again in a moment. If it persists, let your administrator know.");
@@ -816,14 +933,16 @@ try {
     const acts = document.createElement("div"); acts.className="message-actions";
     acts.innerHTML =
       '<button class="action-btn" data-a="copy"><i class="ti ti-copy"></i>Copy</button>'+
-      '<button class="action-btn" data-a="save"><i class="ti ti-bookmark"></i>Save chat</button>'+
+      '<button class="action-btn" data-a="export"><i class="ti ti-download"></i>Download</button>'+
+      '<button class="action-btn" data-a="email"><i class="ti ti-mail"></i>Email to me</button>'+
       '<button class="action-btn" data-a="regen"><i class="ti ti-refresh"></i>Regenerate</button>'+
       '<button class="action-btn action-btn-opus" data-a="opus"><i class="ti ti-sparkles"></i>Use Opus 4.8 for deeper analysis</button>';
     acts.addEventListener("click", ev => {
       const btn = ev.target.closest(".action-btn"); if(!btn) return;
       const a = btn.dataset.a;
       if(a==="copy"){ navigator.clipboard.writeText(text); btn.innerHTML='<i class="ti ti-check"></i>Copied'; }
-      if(a==="save"){ btn.innerHTML='<i class="ti ti-check"></i>Saved'; }
+      if(a==="export"){ exportResponse(text); btn.innerHTML='<i class="ti ti-check"></i>Downloaded'; setTimeout(()=>{ btn.innerHTML='<i class="ti ti-download"></i>Download'; }, 1500); }
+      if(a==="email"){ const copied = emailResponse(text); btn.innerHTML = copied ? '<i class="ti ti-check"></i>Copied + opening' : '<i class="ti ti-check"></i>Opening mail'; setTimeout(()=>{ btn.innerHTML='<i class="ti ti-mail"></i>Email to me'; }, 1800); }
       if(a==="opus"){ useOpus=true; modelStatus.textContent="Opus 4.8"; btn.innerHTML='<i class="ti ti-sparkles"></i>Opus 4.8 on'; }
     });
     bub.appendChild(acts);
