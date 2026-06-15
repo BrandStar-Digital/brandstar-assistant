@@ -238,6 +238,8 @@ body {
 .preview-doc pre { background: var(--aibios-surface); border: 1px solid var(--aibios-border); border-radius: 8px; padding: 14px; overflow-x: auto; }
 .preview-close { background: transparent; border: none; cursor: pointer; color: var(--aibios-text-subtle); font-size: 22px; display: flex; }
 .preview-close:hover { color: var(--aibios-text); }
+.build-badge{font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#0a7a55;background:rgba(0,168,114,.10);border:1px solid rgba(0,168,114,.28);border-radius:6px;padding:1px 7px;cursor:pointer;white-space:nowrap;}
+.build-badge:hover{background:rgba(0,168,114,.18);}
 </style>
 </head>
 <body>
@@ -255,6 +257,8 @@ body {
     <span class="status-dot" id="modelStatus">Sonnet 4.6</span>
     <span class="status-divider">|</span>
     <span id="budget">Internal testing · usage monitored</span>
+    <span class="status-divider">|</span>
+    <span id="buildBadge" class="build-badge" title="Relay build — click to refresh">build …</span>
   </div>
 </div>
 
@@ -814,6 +818,16 @@ try {
     });
     bub.appendChild(acts);
   }
+</script>
+<script>
+/* Relay BUILD badge — reads bs-widget-relay /api/version (stamped on each deploy). */
+(function(){
+  var VERSION_URL = "https://bs-widget-relay.azurewebsites.net/api/version";
+  function rel(ts){ if(!ts) return ""; var d=(Date.now()-new Date(ts).getTime())/1000; if(d<60) return "just now"; if(d<3600) return Math.floor(d/60)+"m ago"; if(d<86400) return Math.floor(d/3600)+"h ago"; return Math.floor(d/86400)+"d ago"; }
+  function render(el, info){ var sha=(info&&info.sha)||"?"; el.textContent="build "+sha+(info&&info.builtAt?(" · "+rel(info.builtAt)):""); el.title="Relay build "+sha+(info&&info.builtAt?(" · deployed "+new Date(info.builtAt).toLocaleString()):"")+" — click to refresh"; }
+  function load(el){ el.textContent="build …"; fetch(VERSION_URL,{cache:"no-store"}).then(function(r){return r.json();}).then(function(j){render(el,j);}).catch(function(){ el.textContent="build n/a"; }); }
+  document.addEventListener("DOMContentLoaded", function(){ var el=document.getElementById("buildBadge"); if(!el) return; el.addEventListener("click", function(){ load(el); }); load(el); });
+})();
 </script>
 </body>
 </html>
