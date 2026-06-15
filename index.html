@@ -739,17 +739,28 @@ try {
 
       // Budget cap: the relay returns HTTP 429 (or a limit flag) when the user
       // has hit their daily usage limit. Show a clean message, not an error.
-      if (res.status === 429) {
-        let resetNote = "Your access resets at midnight.";
+     if (res.status === 429) {
+        // Budget cap hit. The relay decides daily vs. weekly and may return a
+        // resetAt (when access returns) and/or a custom message. Trust the relay
+        // when it tells us; otherwise stay tier-neutral and don't promise a
+        // specific reset time we can't verify (weekly caps don't reset at midnight).
+        let headline = "**You've reached your usage limit.**";
+        let resetNote = "Your access will reset automatically once the limit window passes.";
         try {
           const d = await res.clone().json();
-          if (d && d.resetAt) resetNote = "Your access resets at " + d.resetAt + ".";
-          else if (d && d.message) resetNote = d.message;
+          if (d && d.message) {            // relay-authored message wins
+            resetNote = d.message;
+          } else if (d && d.resetAt) {      // explicit reset timestamp/label from relay
+            resetNote = "Your access resets at " + d.resetAt + ".";
+          }
+          if (d && d.scope === "weekly") headline = "**You've reached your weekly usage limit.**";
+          else if (d && d.scope === "daily") headline = "**You've reached your daily usage limit.**";
         } catch {}
         typing(false);
-        bubble("assistant", "**You've reached your daily usage limit.** " + resetNote + "\n\nThis helps us keep the assistant available to everyone. If you need more, reach out to your administrator.");
+        bubble("assistant", headline + " " + resetNote + "\n\nThis helps us keep the assistant available to everyone. If you need more, reach out to your administrator.");
         sendBtn.disabled = false; input.focus();
         return;
+      }
       }
 
       if (canStream && ctype.includes("text/event-stream")) {
