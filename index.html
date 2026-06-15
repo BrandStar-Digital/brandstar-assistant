@@ -374,7 +374,15 @@ body {
     },
     cache: { cacheLocation: "sessionStorage", storeAuthStateInCookie: false }
   };
-  const GRAPH_SCOPES = ["User.Read", "Mail.Read", "Calendars.Read"];
+  // Graph delegated scopes the widget requests. Chat.Read was added (June 2026)
+  // for Teams 1:1/group chat reads — without it, the minted token cannot
+  // authorize /me/chats even when the relay's chat tools are deployed. Adding a
+  // scope triggers a fresh consent prompt on next sign-in; if the tenant gates
+  // Chat.Read behind admin consent, Joel must grant it before silent acquire
+  // succeeds. SharePoint (Sites.Read) is intentionally NOT requested here — it
+  // is satisfied relay-side today and is left untouched to avoid regressing a
+  // working connector.
+  const GRAPH_SCOPES = ["User.Read", "Mail.Read", "Calendars.Read", "Chat.Read"];
 
   let msalApp = null, msAccount = null;
   const msalReady = (typeof msal !== "undefined" && msal && msal.PublicClientApplication);
