@@ -243,6 +243,31 @@ body {
 .newchat-btn{font-family:inherit;font-size:11px;font-weight:700;letter-spacing:.2px;color:var(--aibios-text-muted);background:transparent;border:1px solid var(--aibios-border-soft);border-radius:6px;padding:3px 9px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;transition:color 200ms var(--ease),border-color 200ms var(--ease),background 200ms var(--ease);}
 .newchat-btn i{font-size:13px;}
 .newchat-btn:hover{color:var(--aibios-text);border-color:var(--bs-green);background:rgba(0,194,133,.08);}
+/* History panel — slides from the LEFT (navigation), distinct from the right-side doc preview */
+.history-overlay{position:fixed;inset:0;background:rgba(10,14,26,.45);display:none;align-items:stretch;justify-content:flex-start;z-index:1000;}
+.history-overlay.open{display:flex;}
+.history-panel{width:min(380px,90vw);background:var(--aibios-bg);height:100%;display:flex;flex-direction:column;box-shadow:8px 0 40px rgba(10,14,26,.25);animation:slideInLeft 240ms var(--ease);}
+@keyframes slideInLeft{from{transform:translateX(-40px);opacity:0;}to{transform:translateX(0);opacity:1;}}
+.history-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px 12px;border-bottom:1px solid var(--aibios-border);flex-shrink:0;}
+.history-head .title{font-size:14px;font-weight:800;color:var(--aibios-text);display:flex;align-items:center;gap:9px;}
+.history-head .title i{color:var(--bs-green-core);font-size:18px;}
+.history-sub{padding:9px 20px;font-size:11px;font-weight:600;color:var(--aibios-text-subtle);border-bottom:1px solid var(--aibios-border);flex-shrink:0;}
+.history-list{flex:1;overflow-y:auto;padding:8px;}
+.history-list::-webkit-scrollbar{width:8px;}
+.history-list::-webkit-scrollbar-thumb{background:var(--aibios-border-soft);border-radius:4px;}
+.history-empty{padding:40px 24px;text-align:center;color:var(--aibios-text-subtle);font-size:13px;font-weight:600;line-height:1.6;}
+.hist-item{position:relative;padding:11px 12px;border-radius:10px;cursor:pointer;border:1px solid transparent;transition:background 160ms var(--ease),border-color 160ms var(--ease);}
+.hist-item:hover{background:var(--aibios-surface);border-color:var(--aibios-border-soft);}
+.hist-item.active{background:rgba(0,194,133,.08);border-color:var(--bs-green);}
+.hist-item .ht{font-size:13px;font-weight:700;color:var(--aibios-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:46px;}
+.hist-item .hp{font-size:11.5px;font-weight:500;color:var(--aibios-text-muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.hist-item .hd{font-size:10.5px;font-weight:600;color:var(--aibios-text-subtle);margin-top:5px;}
+.hist-actions{position:absolute;top:9px;right:8px;display:none;gap:3px;}
+.hist-item:hover .hist-actions{display:flex;}
+.hist-actions button{background:transparent;border:none;cursor:pointer;color:var(--aibios-text-subtle);font-size:14px;padding:3px;border-radius:5px;display:flex;}
+.hist-actions button:hover{color:var(--aibios-text);background:var(--aibios-surface-2);}
+.hist-actions button.del:hover{color:#d64545;}
+.hist-rename-input{width:100%;font-family:inherit;font-size:13px;font-weight:700;color:var(--aibios-text);background:var(--aibios-bg);border:1px solid var(--bs-green);border-radius:5px;padding:3px 6px;outline:none;}
 </style>
 </head>
 <body>
@@ -261,7 +286,8 @@ body {
     <span class="status-divider">|</span>
     <span id="budget">Internal testing · usage monitored</span>
     <span class="status-divider">|</span>
-    <button id="newChatBtn" class="newchat-btn" title="Start a new chat (clears this conversation on this device)"><i class="ti ti-plus"></i>New chat</button>
+    <button id="historyBtn" class="newchat-btn" title="View past conversations (this device)"><i class="ti ti-history"></i>History</button>
+    <button id="newChatBtn" class="newchat-btn" title="Start a new chat (keeps your saved conversations)"><i class="ti ti-plus"></i>New chat</button>
     <span class="status-divider">|</span>
     <span id="buildBadge" class="build-badge" title="Relay build — click to refresh">build …</span>
   </div>
@@ -312,6 +338,17 @@ body {
       </div>
     </div>
     <div class="preview-doc" id="previewDoc"></div>
+  </div>
+</div>
+
+<div class="history-overlay" id="historyOverlay">
+  <div class="history-panel">
+    <div class="history-head">
+      <div class="title"><i class="ti ti-history"></i><span>Conversations</span></div>
+      <button class="preview-close" id="historyClose" title="Close">&times;</button>
+    </div>
+    <div class="history-sub">On this device · stored locally, not on the server</div>
+    <div class="history-list" id="historyList"></div>
   </div>
 </div>
 
@@ -486,45 +523,143 @@ body {
   // continue with full context. Keyed per signed-in user when known, so two
   // people on a shared machine don't see each other's threads.
   // ==========================================================================
-  const PERSIST_VERSION = "v1";
-  let transcript = []; // [{ role, text }] — what's visually on screen
-  function persistKey(){
-    const who = (currentDisplayName() || "anon").toLowerCase().replace(/[^a-z0-9]/g, "");
-    return "bsaiwidget_" + PERSIST_VERSION + "_" + who;
+  // --- Storage model (v2: multiple conversations per user) ---------------
+  // Relay is fully stateless for history (confirmed by Mark) — it stores only
+  // aggregate usage numbers, never message text. So conversation history is a
+  // pure frontend concern and lives in localStorage, scoped per signed-in user.
+  //
+  // Keys (per user `who`):
+  //   bsaiwidget_v2_<who>_index   -> [{ id, title, savedAt, preview }]  (newest first)
+  //   bsaiwidget_v2_<who>_conv_<id> -> { transcript:[{role,text}], history:[...] }
+  //   bsaiwidget_v2_<who>_active  -> "<id>" (the conversation currently on screen)
+  // Each conversation is its own key so reopening one doesn't deserialize all of
+  // them, and a single huge thread can't bloat one blob.
+  const PERSIST_VERSION = "v2";
+  let transcript = [];       // [{ role, text }] — what's visually on screen
+  let activeConvId = null;   // id of the conversation currently loaded
+
+  function whoKey(){
+    return (currentDisplayName() || "anon").toLowerCase().replace(/[^a-z0-9]/g, "");
   }
+  function kBase(){ return "bsaiwidget_" + PERSIST_VERSION + "_" + whoKey(); }
+  function kIndex(){ return kBase() + "_index"; }
+  function kActive(){ return kBase() + "_active"; }
+  function kConv(id){ return kBase() + "_conv_" + id; }
+
+  function lsGet(k){ try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k,v){ try { localStorage.setItem(k, v); return true; } catch (e) { return false; } }
+  function lsDel(k){ try { localStorage.removeItem(k); } catch (e) {} }
+
+  function getIndex(){
+    const raw = lsGet(kIndex()); if (!raw) return [];
+    try { const a = JSON.parse(raw); return Array.isArray(a) ? a : []; } catch (e) { return []; }
+  }
+  function setIndex(arr){ lsSet(kIndex(), JSON.stringify(arr)); }
+
+  function newConvId(){ return "c" + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+
+  // Derive a human title from the first user line; fall back to a timestamp.
+  function deriveTitle(){
+    const firstUser = transcript.find(t => t.role === "user");
+    if (firstUser && firstUser.text) {
+      let t = firstUser.text.replace(/📎.*$/,"").trim();      // strip attachment marker
+      t = t.replace(/\s+/g," ");
+      if (t.length > 48) t = t.slice(0,46) + "…";
+      if (t) return t;
+    }
+    return "Chat · " + new Date().toLocaleDateString([], {month:"short", day:"numeric"});
+  }
+  function derivePreview(){
+    const lastAssistant = [...transcript].reverse().find(t => t.role === "assistant");
+    const src = lastAssistant ? lastAssistant.text : (transcript[0] ? transcript[0].text : "");
+    let p = (src||"").replace(/[#*`>_]/g,"").replace(/\s+/g," ").trim();
+    return p.length > 70 ? p.slice(0,68) + "…" : p;
+  }
+
+  // Save the current conversation under activeConvId, creating it if needed,
+  // and keep the index entry (title/preview/savedAt) in sync. No-op on empty.
   function saveConversation(){
-    try {
-      localStorage.setItem(persistKey(), JSON.stringify({
-        savedAt: Date.now(),
-        transcript: transcript,
-        history: history
-      }));
-    } catch (e) { /* storage full or blocked — fail silently, chat still works */ }
+    if (!transcript.length) return;
+    if (!activeConvId) activeConvId = newConvId();
+    lsSet(kConv(activeConvId), JSON.stringify({ transcript: transcript, history: history }));
+    lsSet(kActive(), activeConvId);
+    const idx = getIndex();
+    const entry = { id: activeConvId, title: deriveTitle(), savedAt: Date.now(), preview: derivePreview() };
+    const existing = idx.findIndex(e => e.id === activeConvId);
+    if (existing >= 0) idx.splice(existing, 1);
+    idx.unshift(entry);                 // newest first
+    if (idx.length > 50) idx.length = 50; // cap stored conversations
+    setIndex(idx);
+    if (typeof renderHistoryPanel === "function") renderHistoryPanel();
   }
+
+  // Start a brand-new, empty conversation (does NOT delete saved ones).
   function clearConversation(){
-    try { localStorage.removeItem(persistKey()); } catch (e) {}
     transcript = []; history.length = 0;
-    // Repaint a clean thread with the welcome screen.
+    activeConvId = null;
+    lsDel(kActive());
     thread.innerHTML = "";
     thread.appendChild(welcome);
     welcome.style.display = "";
     renderSuggestions();
+    if (typeof renderHistoryPanel === "function") renderHistoryPanel();
   }
-  function restoreConversation(){
-    let raw = null;
-    try { raw = localStorage.getItem(persistKey()); } catch (e) { return false; }
-    if (!raw) return false;
-    let data;
-    try { data = JSON.parse(raw); } catch (e) { return false; }
-    if (!data || !Array.isArray(data.transcript) || !data.transcript.length) return false;
-    // Rehydrate the model context...
+
+  // Load a specific saved conversation by id and repaint the thread.
+  function loadConversation(id){
+    const raw = lsGet(kConv(id)); if (!raw) return false;
+    let data; try { data = JSON.parse(raw); } catch (e) { return false; }
+    if (!data || !Array.isArray(data.transcript)) return false;
+    activeConvId = id;
+    lsSet(kActive(), id);
     history.length = 0;
     if (Array.isArray(data.history)) data.history.forEach(h => history.push(h));
-    // ...and repaint the visible thread.
     transcript = [];
-    if (welcome.parentNode) welcome.remove();
+    thread.innerHTML = "";              // clear current thread (welcome included)
     data.transcript.forEach(t => bubble(t.role, t.text, /*skipPersist=*/true));
+    if (typeof renderHistoryPanel === "function") renderHistoryPanel();
+    closeHistoryPanel();
     return true;
+  }
+
+  // Delete one saved conversation. If it was active, fall back to a fresh chat.
+  function deleteConversation(id){
+    lsDel(kConv(id));
+    const idx = getIndex().filter(e => e.id !== id);
+    setIndex(idx);
+    if (activeConvId === id) clearConversation();
+    else if (typeof renderHistoryPanel === "function") renderHistoryPanel();
+  }
+
+  // On load: migrate any v1 single-conversation, then restore the last active one.
+  function migrateV1IfPresent(){
+    const v1key = "bsaiwidget_v1_" + whoKey();
+    const raw = lsGet(v1key); if (!raw) return;
+    try {
+      const data = JSON.parse(raw);
+      if (data && Array.isArray(data.transcript) && data.transcript.length) {
+        const id = newConvId();
+        lsSet(kConv(id), JSON.stringify({ transcript: data.transcript, history: data.history || [] }));
+        const idx = getIndex();
+        // Build a title/preview from the migrated transcript.
+        const firstUser = data.transcript.find(t => t.role === "user");
+        let title = firstUser && firstUser.text ? firstUser.text.replace(/\s+/g," ").slice(0,46) : "Imported chat";
+        idx.unshift({ id, title, savedAt: data.savedAt || Date.now(), preview: "" });
+        setIndex(idx);
+        lsSet(kActive(), id);
+      }
+    } catch (e) { /* ignore bad v1 blob */ }
+    lsDel(v1key); // migrate once
+  }
+
+  function restoreConversation(){
+    migrateV1IfPresent();
+    const activeId = lsGet(kActive());
+    if (activeId && loadConversation(activeId)) return true;
+    // No active pointer — load the most recent if one exists.
+    const idx = getIndex();
+    if (idx.length && loadConversation(idx[0].id)) return true;
+    return false;
   }
 
   // ==========================================================================
@@ -595,18 +730,99 @@ body {
   msInit();
 
   // Restore any prior conversation for this user/device (survives refresh).
-  // Runs against the current persistKey(): anon before sign-in, per-user after.
+  // Runs against the current per-user keys: anon before sign-in, per-user after.
   // Because MSAL uses a redirect flow, the post-sign-in load resolves the
   // per-user key here. If a restore repaints, the welcome screen is replaced.
   try { restoreConversation(); } catch (e) { /* never block startup on restore */ }
 
-  // New chat: clear this device's saved conversation and reset to a fresh thread.
+  // New chat: start a fresh, empty thread. Saved conversations are KEPT — the
+  // current one is already persisted, so this just opens a new blank one.
   (function(){
     const nc = document.getElementById("newChatBtn");
-    if (nc) nc.addEventListener("click", function(){
-      if (transcript.length && !confirm("Start a new chat? This clears the current conversation on this device.")) return;
-      clearConversation();
+    if (nc) nc.addEventListener("click", function(){ clearConversation(); });
+  })();
+
+  // ==========================================================================
+  // HISTORY PANEL — list, open, rename, and delete saved conversations.
+  // All device-local (localStorage). Mirrors the doc-preview slide-in pattern.
+  // ==========================================================================
+  const historyOverlay = document.getElementById("historyOverlay");
+  const historyList = document.getElementById("historyList");
+  function openHistoryPanel(){ renderHistoryPanel(); historyOverlay.classList.add("open"); }
+  function closeHistoryPanel(){ if (historyOverlay) historyOverlay.classList.remove("open"); }
+  function relTime(ts){
+    if (!ts) return "";
+    const d = (Date.now() - ts) / 1000;
+    if (d < 60) return "just now";
+    if (d < 3600) return Math.floor(d/60) + "m ago";
+    if (d < 86400) return Math.floor(d/3600) + "h ago";
+    if (d < 604800) return Math.floor(d/86400) + "d ago";
+    return new Date(ts).toLocaleDateString([], {month:"short", day:"numeric"});
+  }
+  function renderHistoryPanel(){
+    if (!historyList) return;
+    const idx = getIndex();
+    historyList.innerHTML = "";
+    if (!idx.length){
+      historyList.innerHTML = '<div class="history-empty">No saved conversations yet.<br>Your chats will appear here automatically.</div>';
+      return;
+    }
+    idx.forEach(entry => {
+      const row = document.createElement("div");
+      row.className = "hist-item" + (entry.id === activeConvId ? " active" : "");
+      row.innerHTML =
+        '<div class="ht"></div>' +
+        (entry.preview ? '<div class="hp"></div>' : '') +
+        '<div class="hd">' + relTime(entry.savedAt) + '</div>' +
+        '<div class="hist-actions">' +
+          '<button class="ren" title="Rename"><i class="ti ti-pencil"></i></button>' +
+          '<button class="del" title="Delete"><i class="ti ti-trash"></i></button>' +
+        '</div>';
+      // Set text via textContent to avoid any HTML injection from chat content.
+      row.querySelector(".ht").textContent = entry.title || "Untitled chat";
+      if (entry.preview) row.querySelector(".hp").textContent = entry.preview;
+      // Open on row click (but not when clicking an action button or the rename input).
+      row.addEventListener("click", ev => {
+        if (ev.target.closest(".hist-actions") || ev.target.closest(".hist-rename-input")) return;
+        loadConversation(entry.id);
+      });
+      row.querySelector(".del").addEventListener("click", ev => {
+        ev.stopPropagation();
+        if (confirm("Delete this conversation? This can't be undone.")) deleteConversation(entry.id);
+      });
+      row.querySelector(".ren").addEventListener("click", ev => {
+        ev.stopPropagation();
+        startRename(row, entry);
+      });
+      historyList.appendChild(row);
     });
+  }
+  function startRename(row, entry){
+    const titleEl = row.querySelector(".ht");
+    const current = entry.title || "";
+    const inp = document.createElement("input");
+    inp.className = "hist-rename-input"; inp.value = current; inp.maxLength = 60;
+    titleEl.replaceWith(inp); inp.focus(); inp.select();
+    const commit = () => {
+      const v = inp.value.trim() || current;
+      const idx = getIndex();
+      const e = idx.find(x => x.id === entry.id);
+      if (e){ e.title = v; setIndex(idx); }
+      renderHistoryPanel();
+    };
+    inp.addEventListener("keydown", e => {
+      if (e.key === "Enter") { e.preventDefault(); commit(); }
+      if (e.key === "Escape") { renderHistoryPanel(); }
+    });
+    inp.addEventListener("blur", commit);
+  }
+  (function(){
+    const hb = document.getElementById("historyBtn");
+    if (hb) hb.addEventListener("click", openHistoryPanel);
+    const hc = document.getElementById("historyClose");
+    if (hc) hc.addEventListener("click", closeHistoryPanel);
+    if (historyOverlay) historyOverlay.addEventListener("click", e => { if (e.target === historyOverlay) closeHistoryPanel(); });
+    document.addEventListener("keydown", e => { if (e.key === "Escape") closeHistoryPanel(); });
   })();
 
   function renderSuggestions(){
