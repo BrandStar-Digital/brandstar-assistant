@@ -20,9 +20,20 @@
 
   FILE SUPPORT:
     - PDF and images: sent to Claude as native document/image blocks.
-    - CSV: read as plain text in the browser and embedded in the message, so
-      Claude can summarize, total, dedupe, compare, and reformat the data.
-      (xlsx is NOT supported here — export to CSV first.)
+    - CSV: read as plain text in the browser and embedded in the message.
+    - XLSX/XLS (v1.2): parsed client-side via SheetJS to CSV, then embedded as
+      text — same downstream path as CSV. No relay change; nothing leaves the
+      browser unparsed. Multi-sheet workbooks are flattened sheet-by-sheet.
+    - MULTIPLE FILES (v1.2): attach several files at once; each is sent as its
+      own block (PDF/image) or text section (CSV/XLSX) in the same turn.
+  ============================================================================
+  ENHANCEMENTS IN THIS BUILD (v1.2 — frontend-only, no relay/Azure dependency)
+    #3  XLSX upload      — SheetJS parse -> CSV text, client-side
+    #5  Prompt library   — role-aware browsable gallery (PROMPT_LIBRARY)
+    #8  Multi-file       — `attached` is now an array; multiple blocks per turn
+    #9  Usage meter      — proactive allowance pill; reads optional relay `usage`
+    #10 Format controls  — one-click reshape buttons on every assistant turn
+  Search "// >>> v1.2:" to find each addition.
   ============================================================================
   INTEGRATION SEAMS FOR MARK — search "// >>> MARK:"
     1. AUTH      — DEMO_USER -> Entra ID claims (name, division)
@@ -36,6 +47,8 @@
 -->
 <link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<!-- >>> v1.2: SheetJS for client-side XLSX/XLS parsing (#3). Parses in-browser; no upload of raw workbook. -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.4/lib/msal-browser.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -99,6 +112,9 @@ body {
 .mode-pill:hover { color: var(--aibios-text); border-color: var(--bs-green); }
 .mode-pill.active { background: var(--bs-green-core); color: #fff; border-color: var(--bs-green-core); box-shadow: 0 4px 14px var(--bs-green-glow); }
 .mode-pill:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--bs-green-glow); }
+/* >>> v1.2: "Prompts" library trigger pill sits at the end of the mode row (#5) */
+.lib-pill { color: var(--bs-green); border-color: var(--bs-green); }
+.lib-pill:hover { background: rgba(0,168,114,0.08); }
 .mode-banner {
   margin: 14px 24px 0; background: rgba(0,194,133,0.12); border-left: 4px solid var(--bs-green);
   padding: 11px 15px; border-radius: 6px; font-size: 12.5px; font-weight: 600; color: var(--aibios-text-muted);
@@ -138,6 +154,18 @@ body {
 .action-btn-opus { color: var(--bs-yellow); border-color: rgba(255,200,0,0.35); }
 .action-btn-opus:hover { color: var(--bs-yellow); border-color: var(--bs-yellow); background: rgba(255,200,0,0.08); }
 .action-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--bs-green-glow); }
+/* >>> v1.2: Format-control buttons (#10) — a labeled "Reshape" row under actions */
+.reshape-row { margin-top: 9px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.reshape-label { font-size: 10.5px; font-weight: 800; letter-spacing: 0.4px; text-transform: uppercase; color: var(--aibios-text-subtle); margin-right: 2px; }
+.reshape-btn {
+  font-family: inherit; font-size: 11px; font-weight: 700; padding: 5px 10px; background: transparent;
+  color: var(--aibios-text-muted); border: 1px dashed var(--aibios-border-soft); border-radius: 6px;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 5px;
+  transition: color 160ms var(--ease), border-color 160ms var(--ease), background 160ms var(--ease);
+}
+.reshape-btn i { font-size: 12px; }
+.reshape-btn:hover { color: var(--bs-green-dim); border-color: var(--bs-green); border-style: solid; background: rgba(0,168,114,0.06); }
+.reshape-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--bs-green-glow); }
 .welcome { margin: auto; text-align: center; max-width: 440px; color: var(--aibios-text-muted); }
 .welcome h2 { font-size: 30px; font-weight: 900; color: var(--aibios-text); margin-bottom: 12px; letter-spacing: -0.02em; }
 .welcome p { font-size: 14.5px; font-weight: 500; line-height: 1.6; color: var(--aibios-text-muted); }
@@ -148,6 +176,10 @@ body {
   cursor: pointer; transition: border-color 200ms var(--ease), background 200ms var(--ease);
 }
 .suggest:hover { border-color: var(--bs-green); background: rgba(0,194,133,0.08); }
+/* >>> v1.2: "Browse all prompts" link under the welcome suggestions (#5) */
+.browse-link { margin-top: 16px; font-size: 12px; font-weight: 700; color: var(--bs-green); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.browse-link:hover { color: var(--bs-green-dim); }
+.browse-link i { font-size: 15px; }
 .typing { display: flex; gap: 4px; padding: 4px 0; }
 .typing span { width: 8px; height: 8px; border-radius: 50%; background: var(--bs-green); opacity: 0.5; animation: blink 1.2s infinite; }
 .typing span:nth-child(2){ animation-delay:.2s; } .typing span:nth-child(3){ animation-delay:.4s; }
@@ -174,7 +206,7 @@ body {
 .bubble table { width:100%; border-collapse: collapse; margin: 8px 0; font-size: 13px; }
 .bubble th, .bubble td { border: 1px solid var(--aibios-border); padding: 6px 9px; text-align: left; }
 .attach-wrap { padding: 0 24px; }
-.attach-chip { display: inline-flex; align-items: center; gap: 7px; background: var(--aibios-surface-2); border: 1px solid var(--aibios-border-soft); border-radius: 8px; padding: 6px 11px; font-size: 12px; font-weight: 600; color: var(--aibios-text-muted); margin-bottom: 8px; }
+.attach-chip { display: inline-flex; align-items: center; gap: 7px; background: var(--aibios-surface-2); border: 1px solid var(--aibios-border-soft); border-radius: 8px; padding: 6px 11px; font-size: 12px; font-weight: 600; color: var(--aibios-text-muted); margin-bottom: 8px; margin-right: 7px; }
 .attach-chip .x { cursor: pointer; color: var(--aibios-text-subtle); } .attach-chip .x:hover { color: #ff6b6b; }
 .send-btn {
   font-family: inherit; font-size: 12.5px; font-weight: 800; letter-spacing: 0.3px; padding: 9px 18px;
@@ -201,6 +233,14 @@ body {
 .ms-user-chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--bs-green); box-shadow: 0 0 8px var(--bs-green); }
 .ms-user-chip .signout { cursor: pointer; color: var(--aibios-text-subtle); text-decoration: underline; }
 .ms-user-chip .signout:hover { color: var(--aibios-text); }
+/* >>> v1.2: Usage meter pill (#9) */
+.usage-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: var(--aibios-text-muted); cursor: default; }
+.usage-track { width: 46px; height: 6px; border-radius: 3px; background: var(--aibios-surface-2); overflow: hidden; }
+.usage-fill { height: 100%; background: var(--bs-green); border-radius: 3px; transition: width 300ms var(--ease), background 300ms var(--ease); }
+.usage-pill.warn .usage-fill { background: var(--bs-yellow); }
+.usage-pill.crit .usage-fill { background: #d64545; }
+.usage-pill .req { cursor: pointer; color: var(--bs-green); text-decoration: underline; }
+.usage-pill .req:hover { color: var(--bs-green-dim); }
 /* Document preview panel */
 .preview-overlay {
   position: fixed; inset: 0; background: rgba(10,14,26,0.45);
@@ -268,6 +308,35 @@ body {
 .hist-actions button:hover{color:var(--aibios-text);background:var(--aibios-surface-2);}
 .hist-actions button.del:hover{color:#d64545;}
 .hist-rename-input{width:100%;font-family:inherit;font-size:13px;font-weight:700;color:var(--aibios-text);background:var(--aibios-bg);border:1px solid var(--bs-green);border-radius:5px;padding:3px 6px;outline:none;}
+/* >>> v1.2: Prompt library panel (#5) — slides from the LEFT like history */
+.lib-overlay{position:fixed;inset:0;background:rgba(10,14,26,.45);display:none;align-items:stretch;justify-content:flex-start;z-index:1001;}
+.lib-overlay.open{display:flex;}
+.lib-panel{width:min(560px,94vw);background:var(--aibios-bg);height:100%;display:flex;flex-direction:column;box-shadow:8px 0 40px rgba(10,14,26,.25);animation:slideInLeft 240ms var(--ease);}
+.lib-head{display:flex;align-items:center;justify-content:space-between;padding:16px 22px 12px;border-bottom:1px solid var(--aibios-border);flex-shrink:0;}
+.lib-head .title{font-size:15px;font-weight:800;color:var(--aibios-text);display:flex;align-items:center;gap:9px;}
+.lib-head .title i{color:var(--bs-green-core);font-size:19px;}
+.lib-sub{padding:11px 22px;font-size:12px;font-weight:600;color:var(--aibios-text-muted);border-bottom:1px solid var(--aibios-border);flex-shrink:0;line-height:1.5;}
+.lib-sub strong{color:var(--bs-green);}
+.lib-filters{display:flex;gap:6px;flex-wrap:wrap;padding:12px 22px;border-bottom:1px solid var(--aibios-border);flex-shrink:0;}
+.lib-filter{font-family:inherit;font-size:11px;font-weight:700;padding:5px 11px;background:transparent;color:var(--aibios-text-muted);border:1px solid var(--aibios-border-soft);border-radius:9999px;cursor:pointer;transition:all 160ms var(--ease);}
+.lib-filter:hover{border-color:var(--bs-green);color:var(--aibios-text);}
+.lib-filter.active{background:var(--bs-green-core);color:#fff;border-color:var(--bs-green-core);}
+.lib-search{margin:12px 22px 0;flex-shrink:0;}
+.lib-search input{width:100%;font-family:inherit;font-size:13px;font-weight:500;color:var(--aibios-text);background:var(--aibios-surface);border:1px solid var(--aibios-border-soft);border-radius:9px;padding:9px 13px;outline:none;}
+.lib-search input:focus{border-color:var(--bs-green);box-shadow:0 0 0 3px var(--bs-green-glow);}
+.lib-list{flex:1;overflow-y:auto;padding:14px 22px 22px;}
+.lib-list::-webkit-scrollbar{width:8px;}
+.lib-list::-webkit-scrollbar-thumb{background:var(--aibios-border-soft);border-radius:4px;}
+.lib-group-label{font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--aibios-text-subtle);margin:16px 0 9px;}
+.lib-group-label:first-child{margin-top:0;}
+.lib-card{border:1px solid var(--aibios-border-soft);border-radius:11px;padding:13px 15px;margin-bottom:9px;cursor:pointer;transition:border-color 160ms var(--ease),background 160ms var(--ease);}
+.lib-card:hover{border-color:var(--bs-green);background:rgba(0,168,114,.05);}
+.lib-card .lc-top{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.lib-card .lc-title{font-size:13.5px;font-weight:800;color:var(--aibios-text);}
+.lib-card .lc-mode{font-size:10px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:var(--bs-green);background:rgba(0,168,114,.10);border-radius:5px;padding:2px 7px;flex-shrink:0;}
+.lib-card .lc-desc{font-size:12px;font-weight:500;color:var(--aibios-text-muted);margin-top:5px;line-height:1.5;}
+.lib-card .lc-use{margin-top:9px;font-size:11px;font-weight:800;color:var(--bs-green);display:inline-flex;align-items:center;gap:5px;}
+.lib-empty{padding:36px 18px;text-align:center;color:var(--aibios-text-subtle);font-size:13px;font-weight:600;line-height:1.6;}
 </style>
 </head>
 <body>
@@ -284,7 +353,8 @@ body {
     <span id="msAuthSlot"></span>
     <span class="status-dot" id="modelStatus">Sonnet 4.6</span>
     <span class="status-divider">|</span>
-    <span id="budget">Internal testing · usage monitored</span>
+    <!-- >>> v1.2: usage meter pill (#9). Hidden until the relay returns a usage figure; degrades to the old text otherwise. -->
+    <span id="usageSlot"><span id="budget">Internal testing · usage monitored</span></span>
     <span class="status-divider">|</span>
     <button id="historyBtn" class="newchat-btn" title="View past conversations (this device)"><i class="ti ti-history"></i>History</button>
     <button id="newChatBtn" class="newchat-btn" title="Start a new chat (keeps your saved conversations)"><i class="ti ti-plus"></i>New chat</button>
@@ -299,6 +369,8 @@ body {
   <button class="mode-pill" data-mode="summarize"><i class="ti ti-list"></i>Summarize</button>
   <button class="mode-pill" data-mode="brainstorm"><i class="ti ti-bulb"></i>Brainstorm</button>
   <button class="mode-pill" data-mode="edit"><i class="ti ti-edit"></i>Edit</button>
+  <!-- >>> v1.2: prompt library trigger (#5) -->
+  <button class="mode-pill lib-pill" id="libPill" title="Browse ready-made prompts for your role"><i class="ti ti-books"></i>Prompts</button>
 </div>
 
 <div class="mode-banner" id="modeBanner">
@@ -311,6 +383,8 @@ body {
     <h2>How can I help?</h2>
     <p>Pick a mode above, or just start typing. I'm here to help you research, write, summarize, brainstorm, and edit.</p>
     <div class="suggest-row" id="suggestRow"></div>
+    <!-- >>> v1.2: browse-all entry into the prompt library (#5) -->
+    <div class="browse-link" id="browseLink"><i class="ti ti-books"></i>Browse the full prompt library</div>
   </div>
 </div>
 
@@ -318,8 +392,9 @@ body {
   <div class="attach-wrap" id="attachWrap"></div>
   <div class="input-row">
     <input type="text" class="input-field" id="input" placeholder="Ask anything, or pick a mode above...">
-    <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.csv" style="display:none">
-    <button class="input-icon-btn" id="clipBtn" title="Attach a PDF, image, or CSV"><i class="ti ti-paperclip"></i></button>
+    <!-- >>> v1.2: multi-file + xlsx (#3, #8): `multiple` enabled, .xlsx/.xls accepted -->
+    <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.csv,.xlsx,.xls" multiple style="display:none">
+    <button class="input-icon-btn" id="clipBtn" title="Attach PDFs, images, CSV, or Excel — several at once"><i class="ti ti-paperclip"></i></button>
     <button class="send-btn" id="sendBtn">SEND</button>
   </div>
   <div class="input-meta">
@@ -352,6 +427,20 @@ body {
   </div>
 </div>
 
+<!-- >>> v1.2: Prompt library panel (#5) -->
+<div class="lib-overlay" id="libOverlay">
+  <div class="lib-panel">
+    <div class="lib-head">
+      <div class="title"><i class="ti ti-books"></i><span>Prompt Library</span></div>
+      <button class="preview-close" id="libClose" title="Close">&times;</button>
+    </div>
+    <div class="lib-sub" id="libSub">Ready-made prompts you can drop in and run. Showing prompts for <strong id="libDivisionLabel">your division</strong> first.</div>
+    <div class="lib-filters" id="libFilters"></div>
+    <div class="lib-search"><input type="text" id="libSearch" placeholder="Search prompts — e.g. 'recap', 'competitor', 'email'..."></div>
+    <div class="lib-list" id="libList"></div>
+  </div>
+</div>
+
 <script>
   // >>> MARK: AUTH — populate from Entra ID claims in production.
   const DEMO_USER = { name: "Mark", division: "Entertainment" };
@@ -360,11 +449,7 @@ body {
   const DEMO_MODE = true; // true = direct call for in-claude.ai preview; false = Azure Function
 
   // ==========================================================================
-  // MICROSOFT SSO (MSAL.js) — M365 connector sign-in
-  // Each user signs in with their own Microsoft account. We acquire a Graph
-  // token for the delegated scopes and send it to the relay as body.msGraphToken.
-  // The relay reads only that user's own mail/calendar/profile.
-  // App registration: "BrandStar AI Widget" (SPA/PKCE), tenant consent already granted.
+  // MICROSOFT SSO (MSAL.js) — M365 connector sign-in  [UNCHANGED from v1.1]
   // ==========================================================================
   const MSAL_CONFIG = {
     auth: {
@@ -374,14 +459,6 @@ body {
     },
     cache: { cacheLocation: "sessionStorage", storeAuthStateInCookie: false }
   };
-  // Graph delegated scopes the widget requests. Chat.Read was added (June 2026)
-  // for Teams 1:1/group chat reads — without it, the minted token cannot
-  // authorize /me/chats even when the relay's chat tools are deployed. Adding a
-  // scope triggers a fresh consent prompt on next sign-in; if the tenant gates
-  // Chat.Read behind admin consent, Joel must grant it before silent acquire
-  // succeeds. SharePoint (Sites.Read) is intentionally NOT requested here — it
-  // is satisfied relay-side today and is left untouched to avoid regressing a
-  // working connector.
   const GRAPH_SCOPES = ["User.Read", "Mail.Read", "Calendars.Read", "Chat.Read"];
 
   let msalApp = null, msAccount = null;
@@ -394,7 +471,6 @@ body {
   }
 
   async function msInit(){
-    // Always render the button first so a library hiccup never hides sign-in.
     renderMsAuth();
     if (!msalApp) return;
     try {
@@ -410,13 +486,8 @@ body {
     if (msAccount) { fetchUserProfile(); }
   }
 
-  // Real signed-in profile, populated from Microsoft Graph /me after sign-in.
-  // Falls back to demo values until/unless Graph returns data.
   let userProfile = { name: null, department: null, jobTitle: null };
 
-  // Maps a Graph department string to one of our four division keys.
-  // Tolerant: matches on substring so "BrandStar Entertainment", "Entertainment",
-  // "Marketing - Digital", etc. all resolve correctly. Returns null if no match.
   function divisionKeyFromDepartment(dept){
     if (!dept) return null;
     const d = dept.toLowerCase();
@@ -439,39 +510,29 @@ body {
       const p = await r.json();
       userProfile = { name: p.displayName || null, department: p.department || null, jobTitle: p.jobTitle || null };
       updateGreeting();
+      if (typeof refreshLibraryForUser === "function") refreshLibraryForUser(); // >>> v1.2: re-rank prompts by division
     } catch (e) { console.warn("Profile fetch failed:", e); }
   }
 
   async function msSignIn(){
     if (!msalApp) { alert("Microsoft sign-in isn't available right now — the sign-in library didn't load. Refresh the page and try again."); return; }
-    try {
-      // Redirect flow: navigates the tab to Microsoft login, then returns to the
-      // widget signed in. More reliable than popups on GitHub Pages (popups can
-      // be blocked or mis-route, which surfaces as a false "user_cancelled").
-      await msalApp.loginRedirect({ scopes: GRAPH_SCOPES });
-    } catch (e) { console.warn("Sign-in failed:", e); }
+    try { await msalApp.loginRedirect({ scopes: GRAPH_SCOPES }); }
+    catch (e) { console.warn("Sign-in failed:", e); }
   }
-
   function msSignOut(){
     if (!msalApp || !msAccount) return;
     msalApp.logoutRedirect({ account: msAccount }).catch(()=>{});
   }
-
-  // Returns a fresh Graph access token, or null if not signed in.
   async function getGraphToken(){
     if (!msalApp || !msAccount) return null;
     try {
       const r = await msalApp.acquireTokenSilent({ scopes: GRAPH_SCOPES, account: msAccount });
       return r.accessToken;
     } catch (e) {
-      try {
-        // Silent failed (e.g. consent needed) — fall back to a full redirect.
-        await msalApp.acquireTokenRedirect({ scopes: GRAPH_SCOPES, account: msAccount });
-        return null; // page will navigate; token resolves after redirect returns
-      } catch (e2) { console.warn("Token acquisition failed:", e2); return null; }
+      try { await msalApp.acquireTokenRedirect({ scopes: GRAPH_SCOPES, account: msAccount }); return null; }
+      catch (e2) { console.warn("Token acquisition failed:", e2); return null; }
     }
   }
-
   function renderMsAuth(){
     const slot = document.getElementById("msAuthSlot");
     if (slot) {
@@ -511,6 +572,71 @@ body {
     Connect: "User is in BrandStar Connect (connection services, partnerships)."
   };
 
+  // ==========================================================================
+  // >>> v1.2: PROMPT LIBRARY (#5)
+  // A browsable, searchable set of ready-made prompts. Each item is tagged with
+  // a mode (maps to the five modes) and a list of divisions it's most relevant
+  // to ("all" = universal). When a user is signed in, items matching their
+  // division float to the top; everyone can still browse and search everything.
+  // Selecting a card drops its prompt text into the input and (if it declares a
+  // mode) switches the active mode. Pure data + DOM — no relay, no Azure.
+  // ==========================================================================
+  const PROMPT_LIBRARY = [
+    // ---- Universal (all divisions) ----
+    { title:"Summarize a call transcript", mode:"summarize", divisions:["all"], desc:"Turn a Fathom/Teams transcript into decisions, owners, and next steps.",
+      prompt:"Summarize the transcript I'm about to paste. Give me: (1) a 2-sentence bottom line, (2) key decisions made, (3) action items with owners, (4) any open questions to follow up on. Keep it scannable." },
+    { title:"Draft a client check-in email", mode:"write", divisions:["all"], desc:"Warm, concise status email that moves a relationship forward.",
+      prompt:"Draft a short client check-in email (under 150 words, warm but concise, no jargon). Goal: keep the relationship warm and surface any needs. I'll give you the client name and what's happened recently — ask me for those first if I haven't provided them." },
+    { title:"Turn notes into a status update", mode:"write", divisions:["all"], desc:"Messy notes become a clean internal status anyone can scan.",
+      prompt:"Convert the rough notes I paste into a clean internal status update with: Headline (one line), What got done, What's next, Blockers/risks. Plain language, no filler." },
+    { title:"Brief me before a meeting", mode:"research", divisions:["all"], desc:"A tight prep brief for any upcoming call or meeting.",
+      prompt:"Help me prep for a meeting. Ask me who it's with and the goal, then produce: a one-line objective, 3 talking points, 2 smart questions to ask, and anything I should verify beforehand." },
+    { title:"Sharpen this writing", mode:"edit", divisions:["all"], desc:"Tighten clarity and impact while keeping your voice.",
+      prompt:"Edit the text I paste for clarity, concision, and impact. Preserve my voice and meaning. Then list the 3 most important changes you made and why." },
+
+    // ---- BrandStar Digital / Marketing ----
+    { title:"Competitor research snapshot", mode:"research", divisions:["Marketing"], desc:"Fast, structured profile of a competitor for positioning.",
+      prompt:"Research the competitor I name and give me a structured snapshot: positioning, target audience, core services, apparent strengths, apparent gaps, and 3 angles BrandStar Digital could use to differentiate. Flag anything that should be verified against current sources." },
+    { title:"LinkedIn post (BrandStar Digital voice)", mode:"write", divisions:["Marketing"], desc:"Confident, plainspoken post with a soft CTA.",
+      prompt:"Write a LinkedIn post (under 120 words) in a confident, plainspoken voice for a South Florida B2B audience. Lead with a pain point, give one concrete result, end with a soft CTA to DM. I'll give you the topic — ask if I haven't." },
+    { title:"Paid media performance readout", mode:"summarize", divisions:["Marketing"], desc:"Translate campaign numbers into a plain-language readout.",
+      prompt:"I'll paste paid media performance data (or attach a CSV/Excel export). Give me a plain-language readout: what's working, what's underperforming, budget pacing, and 3 prioritized recommendations. Lead with the bottom line." },
+    { title:"SEO/content angle generator", mode:"brainstorm", divisions:["Marketing"], desc:"Topic and angle ideas mapped to funnel stage.",
+      prompt:"Brainstorm 8 content/SEO angles for the topic I give you, mapped to awareness / consideration / conversion. For each: a working headline and the search intent it serves. Then tell me which 3 you'd start with and why." },
+
+    // ---- Entertainment ----
+    { title:"Episode topic research", mode:"research", divisions:["Entertainment"], desc:"Background and angles for a show segment or episode.",
+      prompt:"Research the topic I name for a TV segment. Give me: why it matters now, 3 story angles, credible talking points, and any sensitivities to handle carefully. Flag claims that need fact-checking before air." },
+    { title:"Segment pitch one-pager", mode:"write", divisions:["Entertainment"], desc:"A persuasive one-pager for a prospective segment brand.",
+      prompt:"Draft a one-page segment pitch for the brand I name. Frame the branded-education value, what they get (segment + digital + social + landing page), and why it fits one of our shows. Polish like a real client deliverable." },
+    { title:"Brainstorm show/segment concepts", mode:"brainstorm", divisions:["Entertainment"], desc:"Fresh segment concepts for a brand or theme.",
+      prompt:"Brainstorm 6 segment concepts for the brand or theme I give you. For each: a hook, the audience takeaway, and which show it fits best. Then recommend your top 2." },
+
+    // ---- Connect ----
+    { title:"Outbound call script", mode:"write", divisions:["Connect"], desc:"A natural, compliant outbound script for a campaign.",
+      prompt:"Draft an outbound call script for the campaign I describe. Include: a natural opener, a qualifying question set, objection handling for the 3 most likely pushbacks, and a clear next-step ask. Keep it conversational and compliant." },
+    { title:"Appointment-setting email", mode:"write", divisions:["Connect"], desc:"A short B2B email that books the meeting.",
+      prompt:"Write a short B2B appointment-setting email (under 120 words) for the offer I describe. One clear value line, one proof point, one specific call-to-action with a scheduling ask." },
+
+    // ---- Studios ----
+    { title:"Production shot list draft", mode:"write", divisions:["Studios"], desc:"A starting shot list from a brief or concept.",
+      prompt:"From the concept I describe, draft a starting shot list: setups, suggested framing, and any LED-volume/virtual-production notes. Organize by scene and flag anything that needs a location or prop decision." },
+    { title:"Creative concept directions", mode:"brainstorm", divisions:["Studios"], desc:"Distinct creative directions for a production brief.",
+      prompt:"Brainstorm 4 distinct creative directions for the production brief I give you. For each: the visual idea in one sentence, the mood, and the production approach. Recommend the strongest and why." }
+  ];
+
+  // Format presets (#10) — each reshapes the prior assistant answer.
+  // We send a follow-up turn that references "your previous response" so the
+  // model rewrites in place using full conversation context (iterate, don't restart).
+  const FORMAT_PRESETS = [
+    { key:"table",   label:"As a table",   icon:"ti-table",        instr:"Reformat your previous response as a clear table. Keep all the substance; choose sensible columns. If it doesn't suit a single table, use the best structured format and say why." },
+    { key:"bullets", label:"As bullets",   icon:"ti-list-details", instr:"Reformat your previous response as tight, scannable bullet points. Lead with the bottom line, then group related points. No filler." },
+    { key:"email",   label:"As an email",  icon:"ti-mail",         instr:"Rewrite your previous response as a ready-to-send email — clear subject line, warm but concise body, no jargon. Keep it professional and on the BrandStar Digital voice." },
+    { key:"shorter", label:"Shorter",      icon:"ti-arrows-minimize", instr:"Make your previous response significantly shorter while keeping every essential point. Cut wind-up and repetition." },
+    { key:"formal",  label:"More formal",  icon:"ti-businessplan",  instr:"Rewrite your previous response in a more formal, executive register suitable for leadership or a client, without losing clarity." },
+    { key:"steps",   label:"As steps",     icon:"ti-list-numbers", instr:"Reformat your previous response as a numbered, sequential set of steps someone could follow start to finish." }
+  ];
+
   let mode = "research", useOpus = false;
   const history = [];
   const $ = id => document.getElementById(id);
@@ -519,58 +645,30 @@ body {
         suggestRow = $("suggestRow");
 
   // ==========================================================================
-  // CONVERSATION PERSISTENCE (frontend-only, localStorage)
-  // Survives refresh and closing the tab on THIS browser/device. The relay is
-  // stateless (we send full messages[] each turn), so storing locally is safe
-  // and owns no secrets — only the visible transcript. Cross-device history is
-  // a V2 relay-backed item; this captures the everyday "I refreshed and lost my
-  // chat" pain entirely on the frontend.
-  //
-  // What we store: the rendered transcript (role + display text) so the thread
-  // can be repainted, AND the model `history` array so the conversation can
-  // continue with full context. Keyed per signed-in user when known, so two
-  // people on a shared machine don't see each other's threads.
+  // CONVERSATION PERSISTENCE (frontend-only, localStorage)  [UNCHANGED from v1.1]
   // ==========================================================================
-  // --- Storage model (v2: multiple conversations per user) ---------------
-  // Relay is fully stateless for history (confirmed by Mark) — it stores only
-  // aggregate usage numbers, never message text. So conversation history is a
-  // pure frontend concern and lives in localStorage, scoped per signed-in user.
-  //
-  // Keys (per user `who`):
-  //   bsaiwidget_v2_<who>_index   -> [{ id, title, savedAt, preview }]  (newest first)
-  //   bsaiwidget_v2_<who>_conv_<id> -> { transcript:[{role,text}], history:[...] }
-  //   bsaiwidget_v2_<who>_active  -> "<id>" (the conversation currently on screen)
-  // Each conversation is its own key so reopening one doesn't deserialize all of
-  // them, and a single huge thread can't bloat one blob.
   const PERSIST_VERSION = "v2";
-  let transcript = [];       // [{ role, text }] — what's visually on screen
-  let activeConvId = null;   // id of the conversation currently loaded
+  let transcript = [];
+  let activeConvId = null;
 
-  function whoKey(){
-    return (currentDisplayName() || "anon").toLowerCase().replace(/[^a-z0-9]/g, "");
-  }
+  function whoKey(){ return (currentDisplayName() || "anon").toLowerCase().replace(/[^a-z0-9]/g, ""); }
   function kBase(){ return "bsaiwidget_" + PERSIST_VERSION + "_" + whoKey(); }
   function kIndex(){ return kBase() + "_index"; }
   function kActive(){ return kBase() + "_active"; }
   function kConv(id){ return kBase() + "_conv_" + id; }
-
   function lsGet(k){ try { return localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k,v){ try { localStorage.setItem(k, v); return true; } catch (e) { return false; } }
   function lsDel(k){ try { localStorage.removeItem(k); } catch (e) {} }
-
   function getIndex(){
     const raw = lsGet(kIndex()); if (!raw) return [];
     try { const a = JSON.parse(raw); return Array.isArray(a) ? a : []; } catch (e) { return []; }
   }
   function setIndex(arr){ lsSet(kIndex(), JSON.stringify(arr)); }
-
   function newConvId(){ return "c" + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
-
-  // Derive a human title from the first user line; fall back to a timestamp.
   function deriveTitle(){
     const firstUser = transcript.find(t => t.role === "user");
     if (firstUser && firstUser.text) {
-      let t = firstUser.text.replace(/📎.*$/,"").trim();      // strip attachment marker
+      let t = firstUser.text.replace(/📎.*$/,"").trim();
       t = t.replace(/\s+/g," ");
       if (t.length > 48) t = t.slice(0,46) + "…";
       if (t) return t;
@@ -583,9 +681,6 @@ body {
     let p = (src||"").replace(/[#*`>_]/g,"").replace(/\s+/g," ").trim();
     return p.length > 70 ? p.slice(0,68) + "…" : p;
   }
-
-  // Save the current conversation under activeConvId, creating it if needed,
-  // and keep the index entry (title/preview/savedAt) in sync. No-op on empty.
   function saveConversation(){
     if (!transcript.length) return;
     if (!activeConvId) activeConvId = newConvId();
@@ -595,13 +690,11 @@ body {
     const entry = { id: activeConvId, title: deriveTitle(), savedAt: Date.now(), preview: derivePreview() };
     const existing = idx.findIndex(e => e.id === activeConvId);
     if (existing >= 0) idx.splice(existing, 1);
-    idx.unshift(entry);                 // newest first
-    if (idx.length > 50) idx.length = 50; // cap stored conversations
+    idx.unshift(entry);
+    if (idx.length > 50) idx.length = 50;
     setIndex(idx);
     if (typeof renderHistoryPanel === "function") renderHistoryPanel();
   }
-
-  // Start a brand-new, empty conversation (does NOT delete saved ones).
   function clearConversation(){
     transcript = []; history.length = 0;
     activeConvId = null;
@@ -612,8 +705,6 @@ body {
     renderSuggestions();
     if (typeof renderHistoryPanel === "function") renderHistoryPanel();
   }
-
-  // Load a specific saved conversation by id and repaint the thread.
   function loadConversation(id){
     const raw = lsGet(kConv(id)); if (!raw) return false;
     let data; try { data = JSON.parse(raw); } catch (e) { return false; }
@@ -623,14 +714,12 @@ body {
     history.length = 0;
     if (Array.isArray(data.history)) data.history.forEach(h => history.push(h));
     transcript = [];
-    thread.innerHTML = "";              // clear current thread (welcome included)
-    data.transcript.forEach(t => bubble(t.role, t.text, /*skipPersist=*/true));
+    thread.innerHTML = "";
+    data.transcript.forEach(t => bubble(t.role, t.text, true));
     if (typeof renderHistoryPanel === "function") renderHistoryPanel();
     closeHistoryPanel();
     return true;
   }
-
-  // Delete one saved conversation. If it was active, fall back to a fresh chat.
   function deleteConversation(id){
     lsDel(kConv(id));
     const idx = getIndex().filter(e => e.id !== id);
@@ -638,8 +727,6 @@ body {
     if (activeConvId === id) clearConversation();
     else if (typeof renderHistoryPanel === "function") renderHistoryPanel();
   }
-
-  // On load: migrate any v1 single-conversation, then restore the last active one.
   function migrateV1IfPresent(){
     const v1key = "bsaiwidget_v1_" + whoKey();
     const raw = lsGet(v1key); if (!raw) return;
@@ -649,31 +736,26 @@ body {
         const id = newConvId();
         lsSet(kConv(id), JSON.stringify({ transcript: data.transcript, history: data.history || [] }));
         const idx = getIndex();
-        // Build a title/preview from the migrated transcript.
         const firstUser = data.transcript.find(t => t.role === "user");
         let title = firstUser && firstUser.text ? firstUser.text.replace(/\s+/g," ").slice(0,46) : "Imported chat";
         idx.unshift({ id, title, savedAt: data.savedAt || Date.now(), preview: "" });
         setIndex(idx);
         lsSet(kActive(), id);
       }
-    } catch (e) { /* ignore bad v1 blob */ }
-    lsDel(v1key); // migrate once
+    } catch (e) {}
+    lsDel(v1key);
   }
-
   function restoreConversation(){
     migrateV1IfPresent();
     const activeId = lsGet(kActive());
     if (activeId && loadConversation(activeId)) return true;
-    // No active pointer — load the most recent if one exists.
     const idx = getIndex();
     if (idx.length && loadConversation(idx[0].id)) return true;
     return false;
   }
 
   // ==========================================================================
-  // EXPORT / SEND-TO — download a response as .txt or .md, or open an email
-  // draft (mailto:) pre-filled with the response. mailto opens the user's own
-  // mail client; nothing is sent automatically and no relay/M365 write is used.
+  // EXPORT / SEND-TO  [UNCHANGED from v1.1]
   // ==========================================================================
   function downloadText(filename, text){
     const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
@@ -689,9 +771,6 @@ body {
     downloadText("BrandStar-AI-" + stamp + ".md", text);
   }
   function emailResponse(text){
-    // mailto has a practical URL-length ceiling (~1800 chars is safe across
-    // clients). For longer responses, put a short note in the body and copy the
-    // full text to the clipboard so the user can paste it in.
     const subject = "From BrandStar AI Assistant";
     let body = text;
     let copiedNote = false;
@@ -704,55 +783,36 @@ body {
     return copiedNote;
   }
 
-  // Greeting uses the real Microsoft-signed-in profile when available: real name
-  // and real division (from the Graph department field). Before sign-in, shows a
-  // neutral placeholder ("Welcome BrandStar Ambassador") rather than any name.
   function currentDisplayName(){
     if (userProfile.name) return userProfile.name;
     if (msAccount && (msAccount.name || msAccount.username)) {
       const n = msAccount.name || msAccount.username;
       return n.includes("@") ? n.split("@")[0] : n;
     }
-    return null; // not signed in
+    return null;
   }
-  // Returns the division label to show in the greeting, e.g. "BrandStar Entertainment".
-  // Uses the real department when it maps to a known division; otherwise neutral.
   function currentDivisionLabel(){
     const key = divisionKeyFromDepartment(userProfile.department);
     if (key) return "BrandStar " + key;
-    if (userProfile.department) return userProfile.department; // show raw dept if it doesn't map
-    return "BrandStar"; // signed in but no department on profile
+    if (userProfile.department) return userProfile.department;
+    return "BrandStar";
   }
   function updateGreeting(){
     const g = document.getElementById("greeting"); if (!g) return;
     const name = currentDisplayName();
-    if (!name) {
-      // Pre-sign-in placeholder.
-      g.innerHTML = "Welcome <strong>BrandStar Ambassador</strong>";
-    } else {
-      g.innerHTML = "Hi " + name + " · <strong>" + currentDivisionLabel() + "</strong>";
-    }
+    if (!name) { g.innerHTML = "Welcome <strong>BrandStar Ambassador</strong>"; }
+    else { g.innerHTML = "Hi " + name + " · <strong>" + currentDivisionLabel() + "</strong>"; }
   }
   updateGreeting();
-  // Start Microsoft auth now that all core consts/helpers exist.
   msInit();
-
-  // Restore any prior conversation for this user/device (survives refresh).
-  // Runs against the current per-user keys: anon before sign-in, per-user after.
-  // Because MSAL uses a redirect flow, the post-sign-in load resolves the
-  // per-user key here. If a restore repaints, the welcome screen is replaced.
-  try { restoreConversation(); } catch (e) { /* never block startup on restore */ }
-
-  // New chat: start a fresh, empty thread. Saved conversations are KEPT — the
-  // current one is already persisted, so this just opens a new blank one.
+  try { restoreConversation(); } catch (e) {}
   (function(){
     const nc = document.getElementById("newChatBtn");
     if (nc) nc.addEventListener("click", function(){ clearConversation(); });
   })();
 
   // ==========================================================================
-  // HISTORY PANEL — list, open, rename, and delete saved conversations.
-  // All device-local (localStorage). Mirrors the doc-preview slide-in pattern.
+  // HISTORY PANEL  [UNCHANGED from v1.1]
   // ==========================================================================
   const historyOverlay = document.getElementById("historyOverlay");
   const historyList = document.getElementById("historyList");
@@ -786,10 +846,8 @@ body {
           '<button class="ren" title="Rename"><i class="ti ti-pencil"></i></button>' +
           '<button class="del" title="Delete"><i class="ti ti-trash"></i></button>' +
         '</div>';
-      // Set text via textContent to avoid any HTML injection from chat content.
       row.querySelector(".ht").textContent = entry.title || "Untitled chat";
       if (entry.preview) row.querySelector(".hp").textContent = entry.preview;
-      // Open on row click (but not when clicking an action button or the rename input).
       row.addEventListener("click", ev => {
         if (ev.target.closest(".hist-actions") || ev.target.closest(".hist-rename-input")) return;
         loadConversation(entry.id);
@@ -833,6 +891,153 @@ body {
     document.addEventListener("keydown", e => { if (e.key === "Escape") closeHistoryPanel(); });
   })();
 
+  // ==========================================================================
+  // >>> v1.2: PROMPT LIBRARY PANEL (#5)
+  // ==========================================================================
+  const libOverlay = document.getElementById("libOverlay");
+  const libList = document.getElementById("libList");
+  const libFilters = document.getElementById("libFilters");
+  const libSearch = document.getElementById("libSearch");
+  let libModeFilter = "all";   // "all" | research | write | summarize | brainstorm | edit
+  let libSearchTerm = "";
+
+  function userDivisionKey(){ return divisionKeyFromDepartment(userProfile.department) || null; }
+
+  function buildLibFilters(){
+    const modes = [["all","All"],["research","Research"],["write","Write"],["summarize","Summarize"],["brainstorm","Brainstorm"],["edit","Edit"]];
+    libFilters.innerHTML = "";
+    modes.forEach(([key,label]) => {
+      const b = document.createElement("button");
+      b.className = "lib-filter" + (key === libModeFilter ? " active" : "");
+      b.textContent = label;
+      b.onclick = () => { libModeFilter = key; buildLibFilters(); renderLibrary(); };
+      libFilters.appendChild(b);
+    });
+  }
+
+  // Rank: items matching the user's division first, then universal, then others.
+  function rankedLibrary(){
+    const dk = userDivisionKey();
+    const term = libSearchTerm.trim().toLowerCase();
+    let items = PROMPT_LIBRARY.slice();
+    if (libModeFilter !== "all") items = items.filter(i => i.mode === libModeFilter);
+    if (term) items = items.filter(i =>
+      (i.title + " " + i.desc + " " + i.prompt).toLowerCase().includes(term));
+    const tier = i => {
+      if (dk && i.divisions.includes(dk)) return 0;
+      if (i.divisions.includes("all")) return 1;
+      return 2;
+    };
+    return items.sort((a,b) => tier(a) - tier(b));
+  }
+
+  function renderLibrary(){
+    if (!libList) return;
+    const items = rankedLibrary();
+    libList.innerHTML = "";
+    if (!items.length){
+      libList.innerHTML = '<div class="lib-empty">No prompts match that search.<br>Try a different word, or clear the filter.</div>';
+      return;
+    }
+    const dk = userDivisionKey();
+    let lastTier = -1;
+    items.forEach(item => {
+      const t = (dk && item.divisions.includes(dk)) ? 0 : (item.divisions.includes("all") ? 1 : 2);
+      if (t !== lastTier){
+        const lbl = document.createElement("div");
+        lbl.className = "lib-group-label";
+        lbl.textContent = t === 0 ? ("For " + currentDivisionLabel()) : (t === 1 ? "For everyone" : "Other divisions");
+        libList.appendChild(lbl);
+        lastTier = t;
+      }
+      const card = document.createElement("div");
+      card.className = "lib-card";
+      card.innerHTML =
+        '<div class="lc-top"><span class="lc-title"></span><span class="lc-mode">' + item.mode + '</span></div>' +
+        '<div class="lc-desc"></div>' +
+        '<div class="lc-use"><i class="ti ti-arrow-right"></i>Use this prompt</div>';
+      card.querySelector(".lc-title").textContent = item.title;
+      card.querySelector(".lc-desc").textContent = item.desc;
+      card.addEventListener("click", () => usePrompt(item));
+      libList.appendChild(card);
+    });
+  }
+  function usePrompt(item){
+    // Switch mode to match, drop the prompt text in, close the panel, focus input.
+    if (item.mode && MODES[item.mode]) {
+      mode = item.mode;
+      document.querySelectorAll(".mode-pill").forEach(x => x.classList.toggle("active", x.dataset.mode === mode));
+      banner.querySelector("span").textContent = MODES[mode].banner;
+      renderSuggestions();
+    }
+    input.value = item.prompt;
+    closeLibrary();
+    input.focus();
+  }
+  function openLibrary(){
+    document.getElementById("libDivisionLabel").textContent = currentDivisionLabel();
+    buildLibFilters(); renderLibrary();
+    libOverlay.classList.add("open");
+    setTimeout(() => libSearch && libSearch.focus(), 80);
+  }
+  function closeLibrary(){ if (libOverlay) libOverlay.classList.remove("open"); }
+  function refreshLibraryForUser(){ // called after profile load so ranking updates
+    if (libOverlay && libOverlay.classList.contains("open")) { openLibrary(); }
+  }
+  (function(){
+    const lp = document.getElementById("libPill");      if (lp) lp.addEventListener("click", openLibrary);
+    const bl = document.getElementById("browseLink");   if (bl) bl.addEventListener("click", openLibrary);
+    const lc = document.getElementById("libClose");     if (lc) lc.addEventListener("click", closeLibrary);
+    if (libOverlay) libOverlay.addEventListener("click", e => { if (e.target === libOverlay) closeLibrary(); });
+    if (libSearch) libSearch.addEventListener("input", e => { libSearchTerm = e.target.value; renderLibrary(); });
+    document.addEventListener("keydown", e => { if (e.key === "Escape") closeLibrary(); });
+  })();
+
+  // ==========================================================================
+  // >>> v1.2: USAGE METER (#9)
+  // Proactive allowance indicator. The relay MAY return a `usage` object on any
+  // chat response, e.g. { used: 18, limit: 50, scope: "daily", resetAt: "..." }.
+  // Until it does, we show the existing neutral text — no behavior change. When
+  // a usage object arrives, we render a small meter that turns yellow then red
+  // as the allowance is consumed. "Request more" opens a prefilled email to the
+  // admin. The relay change is OPTIONAL and additive (a field Mark can populate
+  // when telemetry is wired); the frontend degrades gracefully without it.
+  // ==========================================================================
+  let lastUsage = null;
+  function renderUsage(usage){
+    const slot = document.getElementById("usageSlot");
+    if (!slot) return;
+    if (!usage || typeof usage.used !== "number" || typeof usage.limit !== "number" || usage.limit <= 0) {
+      // No usage data — keep the neutral message.
+      slot.innerHTML = '<span id="budget">Internal testing · usage monitored</span>';
+      return;
+    }
+    lastUsage = usage;
+    const remaining = Math.max(0, usage.limit - usage.used);
+    const pct = Math.min(100, Math.round((usage.used / usage.limit) * 100));
+    const scope = usage.scope === "weekly" ? "this week" : "today";
+    let cls = "usage-pill";
+    if (pct >= 90) cls += " crit"; else if (pct >= 70) cls += " warn";
+    slot.innerHTML =
+      '<span class="' + cls + '" title="' + remaining + ' of ' + usage.limit + ' messages left ' + scope + '">' +
+        '<i class="ti ti-gauge"></i>' + remaining + ' left ' + scope +
+        '<span class="usage-track"><span class="usage-fill" style="width:' + pct + '%"></span></span>' +
+        '<span class="req" id="usageReq">Need more?</span>' +
+      '</span>';
+    const req = document.getElementById("usageReq");
+    if (req) req.onclick = requestMoreUsage;
+  }
+  function requestMoreUsage(){
+    const who = currentDisplayName() || "a BrandStar team member";
+    const subject = "BrandStar AI Assistant — usage increase request";
+    const body =
+      "Hi Seth,\n\nI'm reaching the BrandStar AI Assistant usage limit and would like more allowance.\n\n" +
+      "Name: " + who + "\n" +
+      (userProfile.department ? ("Division/Dept: " + userProfile.department + "\n") : "") +
+      "Reason: \n\nThanks!";
+    window.location.href = "mailto:srand@brandstar.com?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
+  }
+
   function renderSuggestions(){
     suggestRow.innerHTML = "";
     SUGGESTIONS[mode].forEach(s => {
@@ -845,6 +1050,7 @@ body {
 
   $("modePills").addEventListener("click", e => {
     const b = e.target.closest(".mode-pill"); if(!b) return;
+    if (b.id === "libPill") return; // library pill handled separately
     document.querySelectorAll(".mode-pill").forEach(x=>x.classList.remove("active"));
     b.classList.add("active"); mode = b.dataset.mode;
     banner.querySelector("span").textContent = MODES[mode].banner;
@@ -854,69 +1060,101 @@ body {
   input.addEventListener("keydown", e => { if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); send(); }});
   sendBtn.addEventListener("click", send);
 
-  // --- File attachment ---
-  // attached shapes:
-  //   PDF/image: { name, mediaType, data(base64), kind: 'document'|'image' }
-  //   CSV:       { name, kind: 'csv', text }
-  let attached = null;
+  // ==========================================================================
+  // >>> v1.2: FILE ATTACHMENTS — multi-file (#8) + client-side XLSX (#3)
+  // `attached` is now an ARRAY. Each entry:
+  //   PDF:   { name, kind:'document', mediaType, data(base64) }
+  //   image: { name, kind:'image',    mediaType, data(base64) }
+  //   csv:   { name, kind:'csv',  text }
+  //   xlsx:  { name, kind:'xlsx', text }   (parsed to CSV-style text in-browser)
+  // XLSX never leaves the browser as a binary — SheetJS converts each sheet to
+  // CSV text locally, and only that text is sent, identical to the CSV path.
+  // ==========================================================================
+  let attached = [];
+  const MAX_FILES = 5;
   const fileInput = $("fileInput"), clipBtn = $("clipBtn"), attachWrap = $("attachWrap");
   clipBtn.addEventListener("click", () => fileInput.click());
-  fileInput.addEventListener("change", async () => {
-    const f = fileInput.files[0]; if(!f) return;
-    if (f.size > 5 * 1024 * 1024) { alert("Please keep files under 5 MB."); fileInput.value=""; return; }
 
-    const isCsv = f.name.toLowerCase().endsWith(".csv") || f.type === "text/csv";
-    if (isCsv) {
-      // CSV is plain text — read it directly, no base64. Claude works with the raw rows.
-      const textData = await new Promise((res, rej) => {
-        const r = new FileReader();
-        r.onload = () => res(r.result);
-        r.onerror = rej; r.readAsText(f);
-      });
-      // Guardrail: very large CSVs won't fit in one turn. ~200k chars is a safe ceiling.
-      if (textData.length > 200000) {
-        alert("That CSV is quite large and may not fit in one message. Try a smaller export or a single sheet.");
-        fileInput.value=""; return;
-      }
-      attached = { name: f.name, kind: "csv", text: textData };
-      renderAttachChip();
-      fileInput.value = "";
-      return;
+  function readAsText(file){
+    return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsText(file); });
+  }
+  function readAsDataURL(file){
+    return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result.split(",")[1]); r.onerror = rej; r.readAsDataURL(file); });
+  }
+  function readAsArrayBuffer(file){
+    return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsArrayBuffer(file); });
+  }
+  // Convert an Excel workbook to readable CSV text, one block per sheet.
+  function xlsxToText(arrayBuffer, fileName){
+    if (typeof XLSX === "undefined") {
+      throw new Error("The Excel reader didn't load. Refresh the page, or export the sheet to CSV and attach that.");
     }
-
-    const b64 = await new Promise((res, rej) => {
-      const r = new FileReader();
-      r.onload = () => res(r.result.split(",")[1]);
-      r.onerror = rej; r.readAsDataURL(f);
+    const wb = XLSX.read(arrayBuffer, { type: "array" });
+    const parts = [];
+    wb.SheetNames.forEach(name => {
+      const ws = wb.Sheets[name];
+      const csv = XLSX.utils.sheet_to_csv(ws, { blankrows: false });
+      if (csv && csv.trim()) parts.push("# Sheet: " + name + "\n" + csv);
     });
-    const isPdf = f.type === "application/pdf";
-    attached = { name: f.name, mediaType: f.type, data: b64, kind: isPdf ? "document" : "image" };
-    renderAttachChip();
-    fileInput.value = "";
-  });
-  function renderAttachChip(){
-    attachWrap.innerHTML = "";
-    if(!attached) return;
-    const chip = document.createElement("div"); chip.className = "attach-chip";
-    chip.innerHTML = '<i class="ti ti-paperclip"></i>' + attached.name + ' <span class="x" title="Remove">✕</span>';
-    chip.querySelector(".x").onclick = () => { attached = null; renderAttachChip(); };
-    attachWrap.appendChild(chip);
+    return parts.join("\n\n");
   }
 
-  // --- Document preview panel ---
-  // Heuristic: a response is "document-like" (worth a preview) if it's substantial
-  // and structured — long enough, with headings, lists, tables, or multiple paragraphs.
-  // This is for written/markdown content (phase 1). Office-format generation
-  // (.docx/.xlsx/.pptx) is a future relay-side capability, not done client-side.
+  fileInput.addEventListener("change", async () => {
+    const files = Array.from(fileInput.files || []);
+    if (!files.length) return;
+    for (const f of files) {
+      if (attached.length >= MAX_FILES) { alert("You can attach up to " + MAX_FILES + " files at once."); break; }
+      if (f.size > 5 * 1024 * 1024) { alert('"' + f.name + '" is over 5 MB — please attach a smaller file.'); continue; }
+      const lower = f.name.toLowerCase();
+      const isCsv  = lower.endsWith(".csv") || f.type === "text/csv";
+      const isXlsx = lower.endsWith(".xlsx") || lower.endsWith(".xls");
+      try {
+        if (isXlsx) {
+          const buf = await readAsArrayBuffer(f);
+          const text = xlsxToText(buf, f.name);
+          if (!text || !text.trim()) { alert('"' + f.name + '" looks empty or unreadable.'); continue; }
+          if (text.length > 200000) { alert('"' + f.name + '" is very large and may not fit in one message. Try a single sheet or a smaller range.'); continue; }
+          attached.push({ name: f.name, kind: "xlsx", text });
+        } else if (isCsv) {
+          const text = await readAsText(f);
+          if (text.length > 200000) { alert('"' + f.name + '" is very large and may not fit in one message.'); continue; }
+          attached.push({ name: f.name, kind: "csv", text });
+        } else {
+          const b64 = await readAsDataURL(f);
+          const isPdf = f.type === "application/pdf";
+          attached.push({ name: f.name, kind: isPdf ? "document" : "image", mediaType: f.type, data: b64 });
+        }
+      } catch (e) {
+        alert('Couldn\'t read "' + f.name + '": ' + (e.message || e));
+      }
+    }
+    renderAttachChips();
+    fileInput.value = "";
+  });
+
+  function renderAttachChips(){
+    attachWrap.innerHTML = "";
+    attached.forEach((a, i) => {
+      const icon = a.kind === "xlsx" ? "ti-file-spreadsheet"
+                 : a.kind === "csv"  ? "ti-file-spreadsheet"
+                 : a.kind === "image" ? "ti-photo" : "ti-file-text";
+      const chip = document.createElement("div"); chip.className = "attach-chip";
+      chip.innerHTML = '<i class="ti ' + icon + '"></i>' + a.name + ' <span class="x" title="Remove">✕</span>';
+      chip.querySelector(".x").onclick = () => { attached.splice(i, 1); renderAttachChips(); };
+      attachWrap.appendChild(chip);
+    });
+  }
+
+  // ==========================================================================
+  // DOCUMENT PREVIEW PANEL  [UNCHANGED from v1.1]
+  // ==========================================================================
   function looksLikeDocument(text){
     if (!text || text.length < 280) return false;
     const hasHeadings = /^#{1,3}\s/m.test(text);
     const hasTable = /\|.*\|/.test(text) && /\|[-:\s|]+\|/.test(text);
     const hasList = /^\s*[-*]\s/m.test(text) || /^\s*\d+\.\s/m.test(text);
     const paraCount = text.split(/\n\s*\n/).length;
-    // Strong structure (markdown headings or a real table) => document, even if shortish.
     if (hasHeadings || hasTable) return true;
-    // Otherwise require more length + a softer structural signal.
     if (text.length < 600) return false;
     return (hasList && paraCount >= 3) || paraCount >= 5;
   }
@@ -940,10 +1178,54 @@ body {
     setTimeout(() => { this.innerHTML = '<i class="ti ti-copy"></i>Copy'; }, 1500);
   });
 
+  // ==========================================================================
+  // MESSAGE RENDERER — adds the Reshape row (#10) to assistant turns.
+  // Reshape sends a follow-up turn ("reformat your previous response...") so the
+  // model rewrites in place using full context — consistent with iterate-don't-
+  // restart. It's just a pre-baked prompt, so it works on the current relay with
+  // zero backend change.
+  // ==========================================================================
+  function attachAssistantActions(bub, text){
+    const acts = document.createElement("div"); acts.className="message-actions";
+    const previewBtn = looksLikeDocument(text)
+      ? '<button class="action-btn" data-a="preview"><i class="ti ti-layout-sidebar-right-expand"></i>Open preview</button>'
+      : '';
+    acts.innerHTML =
+      previewBtn +
+      '<button class="action-btn" data-a="copy"><i class="ti ti-copy"></i>Copy</button>'+
+      '<button class="action-btn" data-a="export"><i class="ti ti-download"></i>Download</button>'+
+      '<button class="action-btn" data-a="email"><i class="ti ti-mail"></i>Email to me</button>'+
+      '<button class="action-btn" data-a="regen"><i class="ti ti-refresh"></i>Regenerate</button>'+
+      '<button class="action-btn action-btn-opus" data-a="opus"><i class="ti ti-sparkles"></i>Use Opus 4.8 for deeper analysis</button>';
+    acts.addEventListener("click", ev => {
+      const btn = ev.target.closest(".action-btn"); if(!btn) return;
+      const a = btn.dataset.a;
+      if(a==="preview"){ openPreview(text, "Document preview"); }
+      if(a==="copy"){ navigator.clipboard.writeText(text); btn.innerHTML='<i class="ti ti-check"></i>Copied'; }
+      if(a==="export"){ exportResponse(text); btn.innerHTML='<i class="ti ti-check"></i>Downloaded'; setTimeout(()=>{ btn.innerHTML='<i class="ti ti-download"></i>Download'; }, 1500); }
+      if(a==="email"){ const copied = emailResponse(text); btn.innerHTML = copied ? '<i class="ti ti-check"></i>Copied + opening' : '<i class="ti ti-check"></i>Opening mail'; setTimeout(()=>{ btn.innerHTML='<i class="ti ti-mail"></i>Email to me'; }, 1800); }
+      if(a==="regen"){ reshape("Regenerate your previous response — same intent, fresh take. Keep the format."); }
+      if(a==="opus"){ useOpus=true; modelStatus.textContent="Opus 4.8"; btn.innerHTML='<i class="ti ti-sparkles"></i>Opus 4.8 on'; }
+    });
+    bub.appendChild(acts);
+
+    // >>> v1.2: Reshape row (#10)
+    const row = document.createElement("div"); row.className = "reshape-row";
+    let html = '<span class="reshape-label">Reshape</span>';
+    FORMAT_PRESETS.forEach(p => {
+      html += '<button class="reshape-btn" data-reshape="' + p.key + '"><i class="ti ' + p.icon + '"></i>' + p.label + '</button>';
+    });
+    row.innerHTML = html;
+    row.addEventListener("click", ev => {
+      const btn = ev.target.closest(".reshape-btn"); if (!btn) return;
+      const preset = FORMAT_PRESETS.find(p => p.key === btn.dataset.reshape);
+      if (preset) reshape(preset.instr);
+    });
+    bub.appendChild(row);
+  }
+
   function bubble(role, text, skipPersist){
     if (welcome.parentNode) welcome.remove();
-    // Record into the visible transcript for persistence (unless we're currently
-    // repainting from storage, in which case skipPersist avoids double-recording).
     if (!skipPersist) { transcript.push({ role: role, text: text }); }
     const m = document.createElement("div"); m.className = "message " + role;
     const av = document.createElement("div");
@@ -952,29 +1234,7 @@ body {
     const bub = document.createElement("div"); bub.className="bubble";
     if (role === "assistant" && window.marked) { bub.innerHTML = marked.parse(text); }
     else { bub.textContent = text; }
-    if (role==="assistant"){
-      const acts = document.createElement("div"); acts.className="message-actions";
-      const previewBtn = looksLikeDocument(text)
-        ? '<button class="action-btn" data-a="preview"><i class="ti ti-layout-sidebar-right-expand"></i>Open preview</button>'
-        : '';
-      acts.innerHTML =
-        previewBtn +
-        '<button class="action-btn" data-a="copy"><i class="ti ti-copy"></i>Copy</button>'+
-        '<button class="action-btn" data-a="export"><i class="ti ti-download"></i>Download</button>'+
-        '<button class="action-btn" data-a="email"><i class="ti ti-mail"></i>Email to me</button>'+
-        '<button class="action-btn" data-a="regen"><i class="ti ti-refresh"></i>Regenerate</button>'+
-        '<button class="action-btn action-btn-opus" data-a="opus"><i class="ti ti-sparkles"></i>Use Opus 4.8 for deeper analysis</button>';
-      acts.addEventListener("click", ev => {
-        const btn = ev.target.closest(".action-btn"); if(!btn) return;
-        const a = btn.dataset.a;
-        if(a==="preview"){ openPreview(text, "Document preview"); }
-        if(a==="copy"){ navigator.clipboard.writeText(text); btn.innerHTML='<i class="ti ti-check"></i>Copied'; }
-        if(a==="export"){ exportResponse(text); btn.innerHTML='<i class="ti ti-check"></i>Downloaded'; setTimeout(()=>{ btn.innerHTML='<i class="ti ti-download"></i>Download'; }, 1500); }
-        if(a==="email"){ const copied = emailResponse(text); btn.innerHTML = copied ? '<i class="ti ti-check"></i>Copied + opening' : '<i class="ti ti-check"></i>Opening mail'; setTimeout(()=>{ btn.innerHTML='<i class="ti ti-mail"></i>Email to me'; }, 1800); }
-        if(a==="opus"){ useOpus=true; modelStatus.textContent="Opus 4.8"; btn.innerHTML='<i class="ti ti-sparkles"></i>Opus 4.8 on'; }
-      });
-      bub.appendChild(acts);
-    }
+    if (role==="assistant"){ attachAssistantActions(bub, text); }
     m.appendChild(av); m.appendChild(bub); thread.appendChild(m); thread.scrollTop = thread.scrollHeight;
     if (!skipPersist) { saveConversation(); }
   }
@@ -988,40 +1248,83 @@ body {
     } else { const t=$("typing"); if(t) t.remove(); }
   }
 
-  // ==========================================================================
-  // CLOUDFLARE — paste your Worker URL and shared password below.
-  // No API key here; the Worker holds it. Safe to share/host this file.
-  // ==========================================================================
-  const WORKER_URL = "https://bs-widget-relay.azurewebsites.net/api/widget-chat";        // <-- e.g. "https://brandstar-assistant.you.workers.dev"
-  const SHARED_PASSWORD = "BrandStar2026 go time";   // <-- MUST match SHARED_PASSWORD in the Cloudflare Worker settings exactly
+  // >>> v1.2: reshape() — fires a follow-up turn that reformats the last answer.
+  // Reuses the normal send pipeline so persistence, usage, and errors all work.
+  function reshape(instruction){
+    if (sendBtn.disabled) return;             // don't stack while a turn is in flight
+    sendMessage(instruction, { silentUser: true });
+  }
 
-  async function send(){
-    const text = input.value.trim(); if(!text) return;
+  // ==========================================================================
+  // CLOUDFLARE / RELAY CONFIG  [UNCHANGED]
+  // ==========================================================================
+  const WORKER_URL = "https://bs-widget-relay.azurewebsites.net/api/widget-chat";
+  const SHARED_PASSWORD = "BrandStar2026 go time";
+
+  // send() — called by the SEND button and Enter. Reads the input + attachments.
+  function send(){
+    const text = input.value.trim();
+    if (!text && attached.length === 0) return;
+    // Hand off to the shared pipeline. Clear input/attachments here.
+    const files = attached.slice();
+    input.value = "";
+    attached = []; renderAttachChips();
+    sendMessage(text, { files });
+  }
+
+  // ==========================================================================
+  // sendMessage(text, opts) — shared pipeline for normal sends AND reshape (#10).
+  //   opts.files       : array of attachment objects (multi-file, #3/#8)
+  //   opts.silentUser  : if true, don't draw a user bubble (used by reshape)
+  // ==========================================================================
+  async function sendMessage(text, opts){
+    opts = opts || {};
+    const files = opts.files || [];
+    if (!text && files.length === 0) return;
+
     if(!WORKER_URL){
-      bubble("user", text);
-      bubble("assistant", "Worker URL not set yet. Open this file in a text editor, paste your Cloudflare Worker URL into WORKER_URL (and your shared password into SHARED_PASSWORD) near the bottom, save, and reopen.");
-      input.value=""; return;
+      if (!opts.silentUser) bubble("user", text || "(attachment)");
+      bubble("assistant", "Worker URL not set yet. Paste your relay URL into WORKER_URL near the bottom of the file, save, and reopen.");
+      return;
     }
-    // Build the user turn — with attachment if present
+
+    // Build the user turn content from text + any attachments.
+    // Text-like files (csv/xlsx) are embedded as fenced text sections.
+    // Binary files (pdf/image) become native document/image blocks.
     let userContent;
-    if (attached && attached.kind === "csv") {
-      // Embed CSV contents as text so Claude can read and work with the data.
-      const csvBlock = "The user attached a CSV file named \"" + attached.name + "\". Here are its contents:\n\n```csv\n" + attached.text + "\n```";
-      userContent = csvBlock + "\n\n" + (text || "Please review the attached CSV.");
-    } else if (attached) {
-      const block = attached.kind === "document"
-        ? { type:"document", source:{ type:"base64", media_type: attached.mediaType, data: attached.data } }
-        : { type:"image", source:{ type:"base64", media_type: attached.mediaType, data: attached.data } };
-      userContent = [ block, { type:"text", text: text || "Please review the attached file." } ];
+    const textFiles = files.filter(f => f.kind === "csv" || f.kind === "xlsx");
+    const binFiles  = files.filter(f => f.kind === "document" || f.kind === "image");
+
+    let textPrefix = "";
+    textFiles.forEach(f => {
+      const lang = "csv";
+      const label = f.kind === "xlsx" ? "Excel workbook" : "CSV file";
+      textPrefix += "The user attached an " + label + ' named "' + f.name + '". Contents:\n\n```' + lang + "\n" + f.text + "\n```\n\n";
+    });
+
+    if (binFiles.length){
+      const blocks = binFiles.map(f => f.kind === "document"
+        ? { type:"document", source:{ type:"base64", media_type: f.mediaType, data: f.data } }
+        : { type:"image",    source:{ type:"base64", media_type: f.mediaType, data: f.data } });
+      const trailing = textPrefix + (text || (textFiles.length || binFiles.length ? "Please review the attached file(s)." : ""));
+      userContent = blocks.concat([{ type:"text", text: trailing }]);
+    } else if (textFiles.length){
+      userContent = textPrefix + (text || "Please review the attached file(s).");
     } else {
       userContent = text;
     }
-    const userLabel = attached ? (text ? text + "  📎 " + attached.name : "📎 " + attached.name) : text;
-    bubble("user", userLabel);
+
+    // Visible user label (skipped for reshape).
+    if (!opts.silentUser){
+      let label = text;
+      if (files.length){
+        const names = files.map(f => f.name).join(", ");
+        label = text ? (text + "  📎 " + names) : ("📎 " + names);
+      }
+      bubble("user", label);
+    }
     history.push({ role:"user", content: userContent });
-    input.value=""; sendBtn.disabled=true;
-    const hadAttachment = !!attached;
-    attached = null; renderAttachChip();
+    sendBtn.disabled = true;
     typing(true);
 
     const userIdentityLine = (userProfile.name)
@@ -1036,7 +1339,6 @@ body {
       "Voice: confident, story-led, sharp, human, purposeful. Direct, no fluff, no emoji, em dashes welcome. " +
       "Strategic partner, not a vendor. Always 'BrandStar Digital', never 'BSD Digital'. " +
       userIdentityLine +
-      // --- BrandStar Knowledge Layer (sourced from brandstar.com, June 2026) ---
       "ABOUT BRANDSTAR: A full-service marketing and production company founded 2005, HQ in Deerfield Beach FL with a second studio in Hollywood FL. Co-founded by Mark Alfieri (CEO) and Doug Campbell (CRO); parent is O2 Media Inc. Tagline 'We grow brands fast.' Mission: make a positive impact on people's lives — connect people with brands to do life better. Fully integrated production company, marketing agency, and content platform. ~2/3 of Fortune 500 have worked with BrandStar; content reaches ~124M households via Lifetime, FOX Business, Bloomberg; 8,000+ projects completed. " +
       "IDD METHOD: Identify what makes a brand unique, Develop creative that educates and inspires, Distribute across awareness/consideration/conversion. " +
       "FOUR DIVISIONS: (1) BrandStar Entertainment (since 2008) — branded-TV division, pioneers of 'branded education' (editorial-style third-party-endorsed TV where the brand lives inside the story). Nine national shows on Lifetime/FOX Business/Bloomberg; national + local segments, sponsorship, social support. President Nicole Oropesa. (2) BrandStar Studios — South Florida production powerhouse, early adopter of LED volumes and in-camera VFX; two facilities (Deerfield Beach 77' curved LED wall; Hollywood 30,000 sq ft, 60' LED stage, fashion studios). Creative development, virtual production, 2D/3D animation + Unreal Engine, post, DRTV, studio rentals. (3) BrandStar Marketing — agency group: research, brand identity, media buying (TV/OTT/radio/CTV), digital/performance advertising, PR/thought leadership, social/influencer, web/SEO/AIO, e-commerce/CRO, CRM/automation, outbound. (4) BrandStar Connect (since 2020) — boutique BPO partner, white-label extension of client teams; inbound/outbound, lead conversion, HIPAA-compliant healthcare comms, education enrollment, B2B appointment setting, Five9 contact-center tech; hybrid nearshore (Trinidad center + US campaign leadership); serves healthcare, education, consumer/DR, B2B. " +
@@ -1048,17 +1350,11 @@ body {
       "NINE SHOWS (hosts/networks/reach): Military Makeover with Montel — host Montel Williams (Marine + Navy vet); veteran home renovations; Lifetime weekday mornings + American Forces Network (600K subscribers worldwide); plus Operation Career spinoff. The Balancing Act — hosts Mario and Courtney Lopez; lifestyle morning show on Lifetime since 2001 (longest-running); audience ~74% women, $87K median HHI. Designing Spaces — award-winning home improvement; Lifetime weekdays 7:30-8am ET/PT + 300+ syndicated airings on 150+ stations. Health Uncensored with Dr. Drew — host Dr. Drew Pinsky (board-certified Internal/Addiction Medicine); airs on FOX Sundays; ~58M TV households; topics span mental health, nutrition, AI, disease prevention. Access Health — health & wellness. Inside the Blueprint — innovation discovery. BELatina — lifestyle. Behind the Mystery — rare disease/health. " +
       "SEGMENT MODEL (how brands participate): shows are 'by invitation only.' A participating brand gets an integrated branded segment within a 30-min program, a digital version with full licensing/reproduction rights, a :30 digital short for social, a dedicated landing page on the show site, coordinated social, distribution on BrandStar.TV (24-hr OTT) and the Lifetime Live Feed (Hulu+Live TV, fuboTV, Philo, Sling), plus PR where applicable. One segment can extend into full-funnel growth across the other divisions. " +
       "ECOSYSTEM PITCH: 'Hire one partner, not ten.' A brand can be discovered on a show (Entertainment), have content produced (Studios), get full-funnel marketing (Marketing/Digital/Kreps/Britton/Trefoil), and customer communication handled (Connect) — all under one roof. Cross-division collaboration is the core BrandStar advantage. " +
-      "You are a capable research and knowledge assistant as well as a BrandStar expert. Answer general knowledge questions, research topics (for TV episodes, market trends, prospective clients not yet in our CRM, etc.), and help with writing and analysis using your full knowledge — don't refuse a question just because it isn't about BrandStar. Use the HubSpot tools when the question is about existing BrandStar deals, contacts, or companies. When the user attaches a CSV, work directly with the data — summarize it, total or compute columns, find duplicates or anomalies, compare rows, or reformat as asked. For current pricing, internal client lists, or staff details specifically, don't guess from memory — note you'd confirm against current systems. When researching prospects or topics from your own knowledge, be helpful and thorough, and flag anything that should be verified. " +
-      // --- end Knowledge Layer ---
+      "You are a capable research and knowledge assistant as well as a BrandStar expert. Answer general knowledge questions, research topics (for TV episodes, market trends, prospective clients not yet in our CRM, etc.), and help with writing and analysis using your full knowledge — don't refuse a question just because it isn't about BrandStar. Use the HubSpot tools when the question is about existing BrandStar deals, contacts, or companies. When the user attaches a CSV or Excel file, work directly with the data — summarize it, total or compute columns, find duplicates or anomalies, compare rows, or reformat as asked. For current pricing, internal client lists, or staff details specifically, don't guess from memory — note you'd confirm against current systems. When researching prospects or topics from your own knowledge, be helpful and thorough, and flag anything that should be verified. " +
       (DIVISION_CONTEXT[divisionKeyFromDepartment(userProfile.department) || DEMO_USER.division]||"") + " " + MODES[mode].sys;
 
-try {
-      // Tools (HubSpot) can fire on ANY text question, and the streaming path
-      // can't run the tool loop — so streaming is disabled while tools are live.
-      // Re-enable per-turn only once the relay buffers tool turns server-side.
-      const canStream = false;
-      // M365: if the user has signed in with Microsoft, attach a fresh Graph
-      // token so the relay can answer mail/calendar/profile questions for them.
+    try {
+      const canStream = false; // tools active — streaming stays off until relay buffers tool turns
       const msGraphToken = await getGraphToken();
       const res = await fetch(WORKER_URL, {
         method:"POST",
@@ -1073,26 +1369,16 @@ try {
         })
       });
 
-      const ctype = res.headers.get("content-type") || "";
-
-      // Budget cap: the relay returns HTTP 429 (or a limit flag) when the user
-      // has hit their daily usage limit. Show a clean message, not an error.
-     if (res.status === 429) {
-        // Budget cap hit. The relay decides daily vs. weekly and may return a
-        // resetAt (when access returns) and/or a custom message. Trust the relay
-        // when it tells us; otherwise stay tier-neutral and don't promise a
-        // specific reset time we can't verify (weekly caps don't reset at midnight).
+      if (res.status === 429) {
         let headline = "**You've reached your usage limit.**";
         let resetNote = "Your access will reset automatically once the limit window passes.";
         try {
           const d = await res.clone().json();
-          if (d && d.message) {            // relay-authored message wins
-            resetNote = d.message;
-          } else if (d && d.resetAt) {      // explicit reset timestamp/label from relay
-            resetNote = "Your access resets at " + d.resetAt + ".";
-          }
+          if (d && d.message) { resetNote = d.message; }
+          else if (d && d.resetAt) { resetNote = "Your access resets at " + d.resetAt + "."; }
           if (d && d.scope === "weekly") headline = "**You've reached your weekly usage limit.**";
           else if (d && d.scope === "daily") headline = "**You've reached your daily usage limit.**";
+          if (d && d.usage) renderUsage(d.usage); // >>> v1.2: reflect the cap in the meter too
         } catch {}
         typing(false);
         bubble("assistant", headline + " " + resetNote + "\n\nThis helps us keep the assistant available to everyone. If you need more, reach out to your administrator.");
@@ -1100,80 +1386,21 @@ try {
         return;
       }
 
-      if (canStream && ctype.includes("text/event-stream")) {
-        // Live streaming render
-        typing(false);
-        const { bub } = makeAssistantBubble();
-        let acc = "";
-        const reader = res.body.getReader();
-        const dec = new TextDecoder();
-        let buf = "";
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buf += dec.decode(value, { stream:true });
-          const lines = buf.split("\n"); buf = lines.pop();
-          for (const line of lines) {
-            if (!line.startsWith("data:")) continue;
-            const payload = line.slice(5).trim();
-            if (!payload || payload === "[DONE]") continue;
-            try {
-              const evt = JSON.parse(payload);
-              if (evt.type === "content_block_delta" && evt.delta?.text) {
-                acc += evt.delta.text;
-                bub.innerHTML = window.marked ? marked.parse(acc) : acc;
-                thread.scrollTop = thread.scrollHeight;
-              }
-            } catch {}
-          }
-        }
-        finalizeAssistantBubble(bub, acc);
-        history.push({ role:"assistant", content: acc });
-        transcript.push({ role: "assistant", text: acc }); // streaming path records its own transcript
-        saveConversation();
-      } else {
-        // Non-streaming (attachment or tool path)
-        const data = await res.json();
-        if (data.error) throw new Error(data.error);
-        typing(false); bubble("assistant", data.reply || "(No response)");
-        history.push({ role:"assistant", content: data.reply });
-        saveConversation(); // re-save so history[] (with this assistant turn) is stored
-      }
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      typing(false);
+      bubble("assistant", data.reply || "(No response)");
+      history.push({ role:"assistant", content: data.reply });
+      if (data.usage) renderUsage(data.usage); // >>> v1.2: usage meter (#9), optional relay field
+      saveConversation();
     } catch(err){
-      typing(false); bubble("assistant", "Couldn't reach the assistant: " + err.message + "\n\nThis is usually a temporary connection issue — try again in a moment. If it persists, let your administrator know.");
+      typing(false);
+      bubble("assistant", "Couldn't reach the assistant: " + err.message + "\n\nThis is usually a temporary connection issue — try again in a moment. If it persists, let your administrator know.");
     } finally { sendBtn.disabled=false; input.focus(); }
-  }
-
-  // Helpers for streaming render
-  function makeAssistantBubble(){
-    if (welcome.parentNode) welcome.remove();
-    const m = document.createElement("div"); m.className = "message assistant";
-    const av = document.createElement("div"); av.className = "avatar avatar-assistant"; av.textContent = "B";
-    const bub = document.createElement("div"); bub.className = "bubble";
-    m.appendChild(av); m.appendChild(bub); thread.appendChild(m); thread.scrollTop = thread.scrollHeight;
-    return { m, bub };
-  }
-  function finalizeAssistantBubble(bub, text){
-    const acts = document.createElement("div"); acts.className="message-actions";
-    acts.innerHTML =
-      '<button class="action-btn" data-a="copy"><i class="ti ti-copy"></i>Copy</button>'+
-      '<button class="action-btn" data-a="export"><i class="ti ti-download"></i>Download</button>'+
-      '<button class="action-btn" data-a="email"><i class="ti ti-mail"></i>Email to me</button>'+
-      '<button class="action-btn" data-a="regen"><i class="ti ti-refresh"></i>Regenerate</button>'+
-      '<button class="action-btn action-btn-opus" data-a="opus"><i class="ti ti-sparkles"></i>Use Opus 4.8 for deeper analysis</button>';
-    acts.addEventListener("click", ev => {
-      const btn = ev.target.closest(".action-btn"); if(!btn) return;
-      const a = btn.dataset.a;
-      if(a==="copy"){ navigator.clipboard.writeText(text); btn.innerHTML='<i class="ti ti-check"></i>Copied'; }
-      if(a==="export"){ exportResponse(text); btn.innerHTML='<i class="ti ti-check"></i>Downloaded'; setTimeout(()=>{ btn.innerHTML='<i class="ti ti-download"></i>Download'; }, 1500); }
-      if(a==="email"){ const copied = emailResponse(text); btn.innerHTML = copied ? '<i class="ti ti-check"></i>Copied + opening' : '<i class="ti ti-check"></i>Opening mail'; setTimeout(()=>{ btn.innerHTML='<i class="ti ti-mail"></i>Email to me'; }, 1800); }
-      if(a==="opus"){ useOpus=true; modelStatus.textContent="Opus 4.8"; btn.innerHTML='<i class="ti ti-sparkles"></i>Opus 4.8 on'; }
-    });
-    bub.appendChild(acts);
   }
 </script>
 <script>
-/* Relay BUILD badge — reads bs-widget-relay /api/version (stamped on each deploy). */
+/* Relay BUILD badge — reads bs-widget-relay /api/version (stamped on each deploy). [UNCHANGED] */
 (function(){
   var VERSION_URL = "https://bs-widget-relay.azurewebsites.net/api/version";
   function rel(ts){ if(!ts) return ""; var d=(Date.now()-new Date(ts).getTime())/1000; if(d<60) return "just now"; if(d<3600) return Math.floor(d/60)+"m ago"; if(d<86400) return Math.floor(d/3600)+"h ago"; return Math.floor(d/86400)+"d ago"; }
