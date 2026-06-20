@@ -317,7 +317,9 @@ body {
 .lib-head .title i{color:var(--bs-green-core);font-size:19px;}
 .lib-sub{padding:11px 22px;font-size:12px;font-weight:600;color:var(--aibios-text-muted);border-bottom:1px solid var(--aibios-border);flex-shrink:0;line-height:1.5;}
 .lib-sub strong{color:var(--bs-green);}
-.lib-filters{display:flex;gap:6px;flex-wrap:wrap;padding:12px 22px;border-bottom:1px solid var(--aibios-border);flex-shrink:0;}
+.lib-filters{display:flex;flex-direction:column;gap:8px;padding:12px 22px;border-bottom:1px solid var(--aibios-border);flex-shrink:0;}
+.lib-filter-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+.lib-filter-rowlabel{font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--aibios-text-subtle);width:34px;flex-shrink:0;}
 .lib-filter{font-family:inherit;font-size:11px;font-weight:700;padding:5px 11px;background:transparent;color:var(--aibios-text-muted);border:1px solid var(--aibios-border-soft);border-radius:9999px;cursor:pointer;transition:all 160ms var(--ease);}
 .lib-filter:hover{border-color:var(--bs-green);color:var(--aibios-text);}
 .lib-filter.active{background:var(--bs-green-core);color:#fff;border-color:var(--bs-green-core);}
@@ -434,7 +436,7 @@ body {
       <div class="title"><i class="ti ti-books"></i><span>Prompt Library</span></div>
       <button class="preview-close" id="libClose" title="Close">&times;</button>
     </div>
-    <div class="lib-sub" id="libSub">Ready-made prompts you can drop in and run. Showing prompts for <strong id="libDivisionLabel">your division</strong> first.</div>
+    <div class="lib-sub" id="libSub">Ready-made prompts you can drop in and run. Filter by your role, and prompts for <strong id="libDivisionLabel">your division</strong> rank first.</div>
     <div class="lib-filters" id="libFilters"></div>
     <div class="lib-search"><input type="text" id="libSearch" placeholder="Search prompts — e.g. 'recap', 'competitor', 'email'..."></div>
     <div class="lib-list" id="libList"></div>
@@ -573,56 +575,191 @@ body {
   };
 
   // ==========================================================================
-  // >>> v1.2: PROMPT LIBRARY (#5)
-  // A browsable, searchable set of ready-made prompts. Each item is tagged with
-  // a mode (maps to the five modes) and a list of divisions it's most relevant
-  // to ("all" = universal). When a user is signed in, items matching their
-  // division float to the top; everyone can still browse and search everything.
-  // Selecting a card drops its prompt text into the input and (if it declares a
-  // mode) switches the active mode. Pure data + DOM — no relay, no Azure.
+  // >>> v1.3: EXPANDED PROMPT LIBRARY (#5)
+  // Each prompt is tagged with:
+  //   mode      — one of the five modes (research/write/summarize/brainstorm/edit)
+  //   divisions — ["all"] (universal) or one+ of: Entertainment, Marketing,
+  //               Kreps, Trefoil, Britton, Digital, Studios, Connect
+  //               (Note: the agency brands Kreps/Trefoil/Britton/Digital all map
+  //                under the "Marketing" division for Graph-department ranking, but
+  //                we tag the specific brand too so the role/search surfaces them.)
+  //   roles     — ["all"] or one+ of: Sales, Account, PM, ClientServices,
+  //               Production, Marketing, AdminOps
+  // Division auto-ranks from the signed-in Graph department. Role is a manual
+  // filter chip the user taps (Graph has no clean role field). Mode + search also
+  // filter. Pure data + DOM — no relay, no Azure.
   // ==========================================================================
   const PROMPT_LIBRARY = [
-    // ---- Universal (all divisions) ----
-    { title:"Summarize a call transcript", mode:"summarize", divisions:["all"], desc:"Turn a Fathom/Teams transcript into decisions, owners, and next steps.",
+    // ======================================================================
+    // UNIVERSAL CORE — every role, every division
+    // ======================================================================
+    { title:"Summarize a call transcript", mode:"summarize", divisions:["all"], roles:["all"], desc:"Turn a Fathom/Teams transcript into decisions, owners, and next steps.",
       prompt:"Summarize the transcript I'm about to paste. Give me: (1) a 2-sentence bottom line, (2) key decisions made, (3) action items with owners, (4) any open questions to follow up on. Keep it scannable." },
-    { title:"Draft a client check-in email", mode:"write", divisions:["all"], desc:"Warm, concise status email that moves a relationship forward.",
-      prompt:"Draft a short client check-in email (under 150 words, warm but concise, no jargon). Goal: keep the relationship warm and surface any needs. I'll give you the client name and what's happened recently — ask me for those first if I haven't provided them." },
-    { title:"Turn notes into a status update", mode:"write", divisions:["all"], desc:"Messy notes become a clean internal status anyone can scan.",
+    { title:"Draft an email", mode:"write", divisions:["all"], roles:["all"], desc:"A clean, professional email from a few details.",
+      prompt:"Draft a professional email. Ask me who it's to, the goal, and any key points if I haven't given them, then write it — clear, warm, concise, no jargon. Include a subject line." },
+    { title:"Turn notes into a status update", mode:"write", divisions:["all"], roles:["all"], desc:"Messy notes become a clean internal status anyone can scan.",
       prompt:"Convert the rough notes I paste into a clean internal status update with: Headline (one line), What got done, What's next, Blockers/risks. Plain language, no filler." },
-    { title:"Brief me before a meeting", mode:"research", divisions:["all"], desc:"A tight prep brief for any upcoming call or meeting.",
+    { title:"Brief me before a meeting", mode:"research", divisions:["all"], roles:["all"], desc:"A tight prep brief for any upcoming call or meeting.",
       prompt:"Help me prep for a meeting. Ask me who it's with and the goal, then produce: a one-line objective, 3 talking points, 2 smart questions to ask, and anything I should verify beforehand." },
-    { title:"Sharpen this writing", mode:"edit", divisions:["all"], desc:"Tighten clarity and impact while keeping your voice.",
+    { title:"Sharpen this writing", mode:"edit", divisions:["all"], roles:["all"], desc:"Tighten clarity and impact while keeping your voice.",
       prompt:"Edit the text I paste for clarity, concision, and impact. Preserve my voice and meaning. Then list the 3 most important changes you made and why." },
+    { title:"Make a to-do list from this", mode:"summarize", divisions:["all"], roles:["all"], desc:"Extract clear, owned action items from notes, an email, or a thread.",
+      prompt:"From the notes, email, or thread I paste, pull a clean to-do list. For each item: the task, who owns it (if stated), and a due date if mentioned. Group by owner if there's more than one. Flag anything ambiguous." },
+    { title:"Analyze this document", mode:"summarize", divisions:["all"], roles:["all"], desc:"Summarize an attached PDF, Word, CSV, or Excel and pull what matters.",
+      prompt:"I'm attaching a document. Give me: a 3-sentence overview, the key points or figures that matter, anything that looks like an action item or decision, and anything I should double-check. If it's data, total or compare the important columns." },
+    { title:"Research a topic", mode:"research", divisions:["all"], roles:["all"], desc:"A structured briefing on any topic, with what to verify.",
+      prompt:"Research the topic I name. Give me a structured briefing: what it is, why it matters now, the key points, and 2-3 reputable angles or considerations. Flag anything that should be verified against current sources." },
+    { title:"Reply to this email", mode:"write", divisions:["all"], roles:["all"], desc:"A ready-to-send reply that hits the right tone.",
+      prompt:"I'll paste an email I received. Draft a reply that addresses every point, in a warm and professional tone. Ask me how I want to respond on anything that needs my decision before you finalize." },
+    { title:"Explain this simply", mode:"summarize", divisions:["all"], roles:["all"], desc:"Plain-language explanation of something complex.",
+      prompt:"Explain the following in plain language a non-specialist could follow, with a quick analogy if it helps. Keep it short and clear: [paste or describe the thing]." },
 
-    // ---- BrandStar Digital / Marketing ----
-    { title:"Competitor research snapshot", mode:"research", divisions:["Marketing"], desc:"Fast, structured profile of a competitor for positioning.",
-      prompt:"Research the competitor I name and give me a structured snapshot: positioning, target audience, core services, apparent strengths, apparent gaps, and 3 angles BrandStar Digital could use to differentiate. Flag anything that should be verified against current sources." },
-    { title:"LinkedIn post (BrandStar Digital voice)", mode:"write", divisions:["Marketing"], desc:"Confident, plainspoken post with a soft CTA.",
-      prompt:"Write a LinkedIn post (under 120 words) in a confident, plainspoken voice for a South Florida B2B audience. Lead with a pain point, give one concrete result, end with a soft CTA to DM. I'll give you the topic — ask if I haven't." },
-    { title:"Paid media performance readout", mode:"summarize", divisions:["Marketing"], desc:"Translate campaign numbers into a plain-language readout.",
-      prompt:"I'll paste paid media performance data (or attach a CSV/Excel export). Give me a plain-language readout: what's working, what's underperforming, budget pacing, and 3 prioritized recommendations. Lead with the bottom line." },
-    { title:"SEO/content angle generator", mode:"brainstorm", divisions:["Marketing"], desc:"Topic and angle ideas mapped to funnel stage.",
-      prompt:"Brainstorm 8 content/SEO angles for the topic I give you, mapped to awareness / consideration / conversion. For each: a working headline and the search intent it serves. Then tell me which 3 you'd start with and why." },
+    // ======================================================================
+    // SALES
+    // ======================================================================
+    { title:"Prospect research snapshot", mode:"research", divisions:["all"], roles:["Sales"], desc:"A structured profile of a prospect before outreach or a call.",
+      prompt:"Research the company I name as a sales prospect. Give me: what they do, who they likely sell to, recent news or signals, likely pain points we could help with, and 3 specific angles for outreach. Flag what to verify and note where a CRM check would fill gaps." },
+    { title:"Cold outreach email", mode:"write", divisions:["all"], roles:["Sales"], desc:"A short, specific first-touch email that earns a reply.",
+      prompt:"Write a cold outreach email (under 120 words) to the prospect I describe. Lead with something specific to them, one clear value point, one proof point, and a low-friction call-to-action. No fluff, no hype. Give me 2 subject line options." },
+    { title:"Follow-up after no reply", mode:"write", divisions:["all"], roles:["Sales"], desc:"A polite, value-adding nudge that isn't pushy.",
+      prompt:"Write a short follow-up email to a prospect who hasn't replied. Add a new piece of value or a reason to re-engage rather than just 'checking in.' Keep it under 80 words and easy to say yes to." },
+    { title:"Discovery call prep", mode:"research", divisions:["all"], roles:["Sales"], desc:"Questions and structure for a discovery conversation.",
+      prompt:"Prep me for a discovery call with the prospect I name. Give me: a one-line objective, 6-8 strong discovery questions (mix of situation, pain, and impact), 2 likely objections with responses, and a clear next-step to aim for." },
+    { title:"Handle a pricing objection", mode:"brainstorm", divisions:["all"], roles:["Sales"], desc:"Ways to respond when a prospect pushes on price.",
+      prompt:"A prospect is pushing back on price. I'll describe the situation. Give me 3 distinct, non-defensive ways to respond that reframe around value, plus one question I should ask to understand the real concern. Recommend the best approach and why." },
+    { title:"Recap a sales call + next steps", mode:"summarize", divisions:["all"], roles:["Sales"], desc:"A clean recap email after a sales conversation.",
+      prompt:"From the notes or transcript I paste, write a brief recap email to the prospect: what we discussed, what we agreed, and clear next steps with owners and dates. Warm, professional, momentum-building." },
 
-    // ---- Entertainment ----
-    { title:"Episode topic research", mode:"research", divisions:["Entertainment"], desc:"Background and angles for a show segment or episode.",
+    // ======================================================================
+    // ACCOUNT MANAGEMENT
+    // ======================================================================
+    { title:"Client check-in email", mode:"write", divisions:["all"], roles:["Account"], desc:"Warm, concise email that keeps the relationship warm.",
+      prompt:"Draft a short client check-in email (under 150 words, warm but concise, no jargon). Goal: keep the relationship warm and surface any needs. I'll give you the client and what's happened recently — ask if I haven't." },
+    { title:"Monthly client recap", mode:"summarize", divisions:["all"], roles:["Account"], desc:"A clear, plain-language recap of the month's work and results.",
+      prompt:"Help me write a monthly client recap. I'll paste the activity and any results data. Structure it: headline takeaway, what we did, results (in plain language), and what's next. Lead with the win. Keep it client-friendly, not internal jargon." },
+    { title:"Prep for a client review / QBR", mode:"research", divisions:["all"], roles:["Account"], desc:"An agenda and talking points for a client review meeting.",
+      prompt:"Prep me for a client review meeting with the client I name. Build: an agenda, the 3 wins to highlight, any issues to get ahead of and how to frame them, 2 questions to ask the client, and a recommended next-step or upsell to tee up." },
+    { title:"Frame a renewal conversation", mode:"write", divisions:["all"], roles:["Account"], desc:"Talking points and a one-page value recap for a renewal.",
+      prompt:"Help me frame a renewal conversation for the client I describe. Give me a one-page value recap (what they've gotten, results, what's ahead) plus 3 talking points for the conversation. If they're price-sensitive, tell me how to lead with ROI." },
+    { title:"Defuse an unhappy client", mode:"write", divisions:["all"], roles:["Account"], desc:"A calm, accountable response that protects the relationship.",
+      prompt:"A client is unhappy — I'll describe the situation. Draft a calm, accountable response that acknowledges the issue, avoids over-apologizing, states what we'll do and by when, and keeps the relationship intact. Then give me 2 things to do offline to make it right." },
+    { title:"Spot an upsell opportunity", mode:"brainstorm", divisions:["all"], roles:["Account"], desc:"Cross-division growth ideas for an existing client.",
+      prompt:"For the client I describe, brainstorm 4 ways we could grow the account — including cross-division opportunities across the BrandStar ecosystem (Entertainment, Studios, the agency brands, Connect). For each: the idea, why it fits them now, and how to introduce it naturally." },
+
+    // ======================================================================
+    // PROJECT MANAGEMENT
+    // ======================================================================
+    { title:"Project status update", mode:"write", divisions:["all"], roles:["PM"], desc:"A scannable status for leadership or a client.",
+      prompt:"Write a project status update from the details I paste. Structure: overall status (green/yellow/red + one line), what got done this period, what's next, risks/blockers, and any decisions needed. Keep it tight and scannable." },
+    { title:"Action items from a meeting", mode:"summarize", divisions:["all"], roles:["PM"], desc:"Pull owned, dated action items out of notes or a transcript.",
+      prompt:"From the notes or transcript I paste, extract every action item with owner and due date. Flag any item with no clear owner. Then list any decisions made and any open questions that still need answers." },
+    { title:"Kickoff brief", mode:"write", divisions:["all"], roles:["PM"], desc:"A starting project brief from a few inputs.",
+      prompt:"Help me draft a project kickoff brief. Ask me for the goal, scope, key dates, and stakeholders if I haven't given them, then produce: objective, scope (in/out), milestones, roles, and risks to watch." },
+    { title:"Timeline & risk summary", mode:"summarize", divisions:["all"], roles:["PM"], desc:"Turn a plan into a clear timeline with risks called out.",
+      prompt:"From the plan or notes I paste, lay out a clear timeline of phases and key dates, then call out the top 3 risks and a mitigation for each. Flag anything that looks unrealistic or under-scoped." },
+    { title:"Cross-team handoff note", mode:"write", divisions:["all"], roles:["PM"], desc:"A clean handoff so another team has everything they need.",
+      prompt:"Write a handoff note to another team picking up this work. Include: context in 2-3 sentences, what's done, what they own now, key files/links to gather, deadlines, and who to ask about what. Make it so they need zero follow-up questions." },
+    { title:"Chase a blocker (internal nudge)", mode:"write", divisions:["all"], roles:["PM"], desc:"A friendly but clear message to unblock something.",
+      prompt:"Write a short internal message to unblock something that's stuck. Be friendly but specific: what I need, why it matters, the deadline, and exactly what the person needs to do. Keep it easy to action." },
+
+    // ======================================================================
+    // CLIENT SERVICES
+    // ======================================================================
+    { title:"Client-friendly email", mode:"write", divisions:["all"], roles:["ClientServices"], desc:"Clear, warm client communication on any topic.",
+      prompt:"Draft a client-facing email on the topic I describe. Warm, clear, jargon-free, and professional. Anticipate the client's likely questions and answer them proactively. Include a subject line." },
+    { title:"Meeting recap for the client", mode:"summarize", divisions:["all"], roles:["ClientServices"], desc:"A recap email the client can rely on after a call.",
+      prompt:"From my notes or the transcript, write a recap email to the client: what we discussed, what was decided, next steps with owners and dates, and anything we need from them. Friendly and clear." },
+    { title:"Answer a client question", mode:"write", divisions:["all"], roles:["ClientServices"], desc:"A helpful, accurate response to a client ask.",
+      prompt:"A client asked the question I'll paste. Draft a helpful, accurate response. If I need to confirm anything internally before answering, tell me what and draft a holding reply too. Keep the tone reassuring and professional." },
+    { title:"Onboarding summary for a new client", mode:"write", divisions:["all"], roles:["ClientServices"], desc:"A welcoming overview of what happens next.",
+      prompt:"Draft an onboarding summary for a new client. Cover: a warm welcome, what happens in the first 30 days, who their points of contact are, what we'll need from them, and how we'll communicate. Make them feel in good hands." },
+    { title:"Explain a delay or change", mode:"write", divisions:["all"], roles:["ClientServices"], desc:"Deliver less-than-ideal news while keeping trust.",
+      prompt:"I need to tell a client about a delay or change — I'll describe it. Draft a message that's honest and accountable, explains the why briefly, states the new plan and timing, and reassures them. Don't over-apologize; focus on the path forward." },
+
+    // ======================================================================
+    // PRODUCTION / FULFILLMENT
+    // ======================================================================
+    { title:"Production status update", mode:"write", divisions:["all"], roles:["Production"], desc:"Where a production or deliverable stands, clearly.",
+      prompt:"Write a production status update from the details I paste: what stage we're in, what's complete, what's pending, any risks to the schedule, and what's needed to stay on track. Tight and scannable." },
+    { title:"Brief from a concept", mode:"write", divisions:["all","Studios","Entertainment"], roles:["Production"], desc:"Turn a concept into a workable production brief.",
+      prompt:"From the concept I describe, draft a production brief: objective, deliverables, key creative notes, must-haves vs. nice-to-haves, and any decisions needed before we start. Flag anything that needs a location, talent, or prop decision." },
+    { title:"Asset / deliverable checklist", mode:"summarize", divisions:["all"], roles:["Production"], desc:"A complete checklist of what's needed to deliver.",
+      prompt:"From what I describe, build a checklist of every asset and deliverable needed to complete this, grouped logically (pre-pro, production, post, delivery). Note dependencies and flag anything commonly forgotten." },
+    { title:"Vendor / partner email", mode:"write", divisions:["all"], roles:["Production"], desc:"A clear request or coordination note to a vendor.",
+      prompt:"Draft a clear email to a vendor or partner. State exactly what I need, by when, in what format, and any specs. Professional and precise so there's no back-and-forth. I'll give you the details." },
+    { title:"Segment / episode prep", mode:"research", divisions:["all","Entertainment"], roles:["Production"], desc:"Background and structure for a show segment or episode.",
+      prompt:"Help me prep a segment or episode on the topic I name. Give me: why it's timely, a suggested structure/flow, credible talking points, questions to drive the conversation, and any sensitivities to handle carefully. Flag claims that need fact-checking before air." },
+
+    // ======================================================================
+    // MARKETING (general — applies across the agency brands)
+    // ======================================================================
+    { title:"Content draft", mode:"write", divisions:["all","Marketing"], roles:["Marketing"], desc:"A first draft of a blog, article, or web copy.",
+      prompt:"Write a first draft of the content I describe (blog post, article, or web copy). Ask me for the topic, audience, and goal if I haven't given them. Lead with a strong hook, keep it clear and skimmable, and end with a clear takeaway or CTA." },
+    { title:"Social post (pick the platform)", mode:"write", divisions:["all","Marketing"], roles:["Marketing"], desc:"A platform-appropriate social post from a topic.",
+      prompt:"Write a social post for the platform and topic I name. Match the platform's norms (length, tone, format). Lead with a hook, keep it tight, and include a clear CTA. Give me 2 variations to choose from." },
+    { title:"Campaign brief", mode:"write", divisions:["all","Marketing"], roles:["Marketing"], desc:"A structured brief to align a campaign.",
+      prompt:"Help me build a campaign brief. Ask for the objective, audience, and budget/timeline if missing, then produce: objective, target audience, key message, channels, deliverables, success metrics, and timeline." },
+    { title:"Competitor snapshot", mode:"research", divisions:["all","Marketing"], roles:["Marketing","Sales","Account"], desc:"A fast, structured read on a competitor.",
+      prompt:"Research the competitor I name and give me a structured snapshot: positioning, target audience, core offering, apparent strengths, apparent gaps, and 3 angles we could use to differentiate. Flag anything to verify against current sources." },
+    { title:"Performance readout from data", mode:"summarize", divisions:["all","Marketing"], roles:["Marketing","Account"], desc:"Turn campaign/analytics numbers into plain language.",
+      prompt:"I'll paste performance data or attach a CSV/Excel export. Give me a plain-language readout: what's working, what's underperforming, pacing vs. goal, and 3 prioritized recommendations. Lead with the bottom line." },
+    { title:"Content & SEO angle ideas", mode:"brainstorm", divisions:["all","Marketing","Digital"], roles:["Marketing"], desc:"Topic angles mapped to the funnel.",
+      prompt:"Brainstorm 8 content/SEO angles for the topic I give you, mapped to awareness / consideration / conversion. For each: a working headline and the search intent it serves. Then recommend the 3 to start with and why." },
+
+    // ======================================================================
+    // ADMIN / OPERATIONS
+    // ======================================================================
+    { title:"Build my agenda for the day/week", mode:"write", divisions:["all"], roles:["AdminOps"], desc:"A prioritized agenda from a list of what's on your plate.",
+      prompt:"I'll paste my meetings, tasks, and deadlines. Build me a prioritized agenda: what to tackle first and why, time-blocking suggestions, and a flag on anything that's at risk of slipping. Keep it realistic." },
+    { title:"Meeting prep packet", mode:"research", divisions:["all"], roles:["AdminOps","Account","Sales","PM"], desc:"Everything needed to walk into a meeting ready.",
+      prompt:"Help me prep for a meeting. Ask who it's with and the purpose, then produce: objective, a short agenda, background on attendees if I provide names, key talking points, and any materials I should have ready." },
+    { title:"Clean up / summarize a spreadsheet", mode:"summarize", divisions:["all"], roles:["AdminOps","Marketing","Account"], desc:"Make sense of a messy CSV or Excel file.",
+      prompt:"I'm attaching a spreadsheet. Summarize what's in it, total or compute the key columns, flag duplicates or anomalies, and tell me anything that looks off. If I describe what I need, reformat or extract it." },
+    { title:"Draft an internal memo", mode:"write", divisions:["all"], roles:["AdminOps","PM"], desc:"A clear internal announcement or memo.",
+      prompt:"Draft an internal memo on the topic I describe. Structure: what's changing/happening, why, who it affects, what they need to do, and by when. Clear and professional, no corporate fog." },
+    { title:"Organize these notes", mode:"edit", divisions:["all"], roles:["AdminOps","all"], desc:"Turn a brain-dump into something structured.",
+      prompt:"Take the messy notes I paste and organize them into a clean, logical structure with clear headings and grouped points. Don't lose any information; just make it usable. Flag anything that looks like an action item." },
+    { title:"Compare two documents", mode:"summarize", divisions:["all"], roles:["AdminOps","ClientServices","PM"], desc:"Spot the differences between two files.",
+      prompt:"I'm attaching two documents. Compare them and tell me: what's the same, what's different, and anything that's in one but missing from the other. Call out anything that looks like a meaningful change." },
+
+    // ======================================================================
+    // DIVISION / BRAND-SPECIFIC
+    // ======================================================================
+    // ---- BrandStar Entertainment ----
+    { title:"Segment pitch one-pager", mode:"write", divisions:["Entertainment"], roles:["Sales","Account","Production"], desc:"A persuasive one-pager for a prospective segment brand.",
+      prompt:"Draft a one-page segment pitch for the brand I name. Frame the branded-education value, what they get (segment + digital version + :30 social short + landing page + coordinated social + OTT distribution), and why it fits one of our shows. Polish like a real client deliverable." },
+    { title:"Match a brand to the right show", mode:"brainstorm", divisions:["Entertainment"], roles:["Sales","Account"], desc:"Which BrandStar show fits a given brand, and why.",
+      prompt:"For the brand I name, recommend which of our shows fits best and why. Consider audience match and story angle. Give me your top 2 with a one-line rationale each, and a hook for how the brand's story could live inside the segment." },
+    { title:"Episode topic research", mode:"research", divisions:["Entertainment"], roles:["Production","Marketing"], desc:"Background and angles for a show segment or episode.",
       prompt:"Research the topic I name for a TV segment. Give me: why it matters now, 3 story angles, credible talking points, and any sensitivities to handle carefully. Flag claims that need fact-checking before air." },
-    { title:"Segment pitch one-pager", mode:"write", divisions:["Entertainment"], desc:"A persuasive one-pager for a prospective segment brand.",
-      prompt:"Draft a one-page segment pitch for the brand I name. Frame the branded-education value, what they get (segment + digital + social + landing page), and why it fits one of our shows. Polish like a real client deliverable." },
-    { title:"Brainstorm show/segment concepts", mode:"brainstorm", divisions:["Entertainment"], desc:"Fresh segment concepts for a brand or theme.",
-      prompt:"Brainstorm 6 segment concepts for the brand or theme I give you. For each: a hook, the audience takeaway, and which show it fits best. Then recommend your top 2." },
 
-    // ---- Connect ----
-    { title:"Outbound call script", mode:"write", divisions:["Connect"], desc:"A natural, compliant outbound script for a campaign.",
-      prompt:"Draft an outbound call script for the campaign I describe. Include: a natural opener, a qualifying question set, objection handling for the 3 most likely pushbacks, and a clear next-step ask. Keep it conversational and compliant." },
-    { title:"Appointment-setting email", mode:"write", divisions:["Connect"], desc:"A short B2B email that books the meeting.",
-      prompt:"Write a short B2B appointment-setting email (under 120 words) for the offer I describe. One clear value line, one proof point, one specific call-to-action with a scheduling ask." },
+    // ---- Kreps PR & Marketing ----
+    { title:"Press release draft", mode:"write", divisions:["Kreps","Marketing"], roles:["Marketing","Account"], desc:"A clean, newsroom-ready press release.",
+      prompt:"Draft a press release for the announcement I describe. Standard structure: strong headline, dateline, compelling lead, supporting detail, a quote (mark where to confirm wording), boilerplate placeholder, and contact line. Newsworthy, not promotional." },
+    { title:"Media pitch to a journalist", mode:"write", divisions:["Kreps","Marketing"], roles:["Marketing","Account"], desc:"A short, hook-led pitch that earns coverage.",
+      prompt:"Write a short media pitch to a journalist for the story I describe. Lead with why it's relevant to their beat and timely now, the hook in 1-2 sentences, and what we can offer (interview, data, exclusive). Under 150 words, no fluff." },
+    { title:"Talking points / spokesperson prep", mode:"write", divisions:["Kreps","Marketing"], roles:["Account","Marketing"], desc:"Crisp talking points for an interview or statement.",
+      prompt:"Build talking points for the topic I describe. Give me 3-4 core messages, a tight quotable line for each, 2 tough questions with suggested responses, and anything to avoid saying. Confident and on-message." },
 
-    // ---- Studios ----
-    { title:"Production shot list draft", mode:"write", divisions:["Studios"], desc:"A starting shot list from a brief or concept.",
-      prompt:"From the concept I describe, draft a starting shot list: setups, suggested framing, and any LED-volume/virtual-production notes. Organize by scene and flag anything that needs a location or prop decision." },
-    { title:"Creative concept directions", mode:"brainstorm", divisions:["Studios"], desc:"Distinct creative directions for a production brief.",
-      prompt:"Brainstorm 4 distinct creative directions for the production brief I give you. For each: the visual idea in one sentence, the mood, and the production approach. Recommend the strongest and why." }
+    // ---- Trefoil Group (B2B) ----
+    { title:"B2B thought-leadership angle", mode:"brainstorm", divisions:["Trefoil","Marketing"], roles:["Marketing","Account"], desc:"Thought-leadership angles for a B2B audience.",
+      prompt:"Brainstorm 6 thought-leadership angles for the B2B topic and industry I name (e.g., manufacturing, packaging, logistics, professional services). For each: the angle, the decision-maker it speaks to, and the format that fits best. Recommend the top 2." },
+    { title:"B2B case study outline", mode:"write", divisions:["Trefoil","Marketing"], roles:["Marketing","Account"], desc:"A structured case study from the basics.",
+      prompt:"Outline a B2B case study from the details I provide: the client's challenge, what we did, and the results. Use a clear problem - approach - results - proof structure. Mark where I need to confirm specific metrics or quotes." },
+
+    // ---- Britton Marketing & Design (consumer) ----
+    { title:"Consumer brand campaign concept", mode:"brainstorm", divisions:["Britton","Marketing"], roles:["Marketing"], desc:"Creative campaign concepts for a consumer brand.",
+      prompt:"Brainstorm 4 campaign concepts for the consumer brand I describe (think home goods, fashion, color/paint, lifestyle). For each: the big idea in one line, the emotional hook, who it speaks to, and a sample headline. Recommend the strongest and why." },
+    { title:"Consumer product copy", mode:"write", divisions:["Britton","Marketing"], roles:["Marketing"], desc:"Warm, benefit-led copy for a consumer product.",
+      prompt:"Write consumer product copy for the item I describe. Warm, vivid, benefit-led — speak to how it makes life better, not just features. Give me a headline, a short paragraph, and 3 bullet benefits." },
+
+    // ---- BrandStar Digital (performance) ----
+    { title:"LinkedIn post (BrandStar Digital voice)", mode:"write", divisions:["Digital","Marketing"], roles:["Marketing","Sales"], desc:"Confident, plainspoken post with a soft CTA.",
+      prompt:"Write a LinkedIn post (under 120 words) in a confident, plainspoken voice for a South Florida B2B audience. Lead with a pain point, give one concrete result, end with a soft CTA to DM. I'll give you the topic — ask if I haven't." },
+    { title:"Paid media performance readout", mode:"summarize", divisions:["Digital","Marketing"], roles:["Marketing","Account"], desc:"Translate paid campaign numbers into plain language.",
+      prompt:"I'll paste paid media performance data (or attach a CSV/Excel export). Give me a plain-language readout: what's working, what's underperforming, budget pacing, and 3 prioritized recommendations. Lead with the bottom line." },
+    { title:"Website / landing page CRO ideas", mode:"brainstorm", divisions:["Digital","Marketing"], roles:["Marketing"], desc:"Conversion ideas for a page.",
+      prompt:"For the web page or landing page I describe (or paste the copy/URL context), suggest 6 conversion-rate improvements — headline, structure, trust signals, CTA, friction. Prioritize them by likely impact and tell me which to test first." }
   ];
 
   // Format presets (#10) — each reshapes the prior assistant answer.
@@ -899,32 +1036,87 @@ body {
   const libFilters = document.getElementById("libFilters");
   const libSearch = document.getElementById("libSearch");
   let libModeFilter = "all";   // "all" | research | write | summarize | brainstorm | edit
+  let libRoleFilter = "all";   // "all" | Sales | Account | PM | ClientServices | Production | Marketing | AdminOps
   let libSearchTerm = "";
 
   function userDivisionKey(){ return divisionKeyFromDepartment(userProfile.department) || null; }
 
+  // The agency brands (Kreps, Trefoil, Britton, Digital) all sit under the
+  // "Marketing" division for Graph-department ranking. So a Marketing user
+  // should see brand-tagged prompts as "theirs." This expands a division key
+  // into every prompt-division tag that should count as a match for that user.
+  const DIVISION_TAG_GROUPS = {
+    Marketing: ["Marketing", "Kreps", "Trefoil", "Britton", "Digital"],
+    Entertainment: ["Entertainment"],
+    Studios: ["Studios"],
+    Connect: ["Connect"]
+  };
+  function divisionMatches(prompt, dk){
+    if (!dk) return false;
+    const group = DIVISION_TAG_GROUPS[dk] || [dk];
+    return prompt.divisions.some(d => group.includes(d));
+  }
+
+  // Role chips shown in the panel. "all" = show everything.
+  const ROLE_FILTERS = [
+    ["all", "All roles"],
+    ["Sales", "Sales"],
+    ["Account", "Account Mgmt"],
+    ["PM", "Project Mgmt"],
+    ["ClientServices", "Client Services"],
+    ["Production", "Production"],
+    ["Marketing", "Marketing"],
+    ["AdminOps", "Admin & Ops"]
+  ];
+
   function buildLibFilters(){
     const modes = [["all","All"],["research","Research"],["write","Write"],["summarize","Summarize"],["brainstorm","Brainstorm"],["edit","Edit"]];
     libFilters.innerHTML = "";
+
+    // Row 1 — role chips (the primary "for my job" filter)
+    const roleRow = document.createElement("div");
+    roleRow.className = "lib-filter-row";
+    const roleLabel = document.createElement("span");
+    roleLabel.className = "lib-filter-rowlabel"; roleLabel.textContent = "Role";
+    roleRow.appendChild(roleLabel);
+    ROLE_FILTERS.forEach(([key,label]) => {
+      const b = document.createElement("button");
+      b.className = "lib-filter" + (key === libRoleFilter ? " active" : "");
+      b.textContent = label;
+      b.onclick = () => { libRoleFilter = key; buildLibFilters(); renderLibrary(); };
+      roleRow.appendChild(b);
+    });
+    libFilters.appendChild(roleRow);
+
+    // Row 2 — mode chips
+    const modeRow = document.createElement("div");
+    modeRow.className = "lib-filter-row";
+    const modeLabel = document.createElement("span");
+    modeLabel.className = "lib-filter-rowlabel"; modeLabel.textContent = "Type";
+    modeRow.appendChild(modeLabel);
     modes.forEach(([key,label]) => {
       const b = document.createElement("button");
       b.className = "lib-filter" + (key === libModeFilter ? " active" : "");
       b.textContent = label;
       b.onclick = () => { libModeFilter = key; buildLibFilters(); renderLibrary(); };
-      libFilters.appendChild(b);
+      modeRow.appendChild(b);
     });
+    libFilters.appendChild(modeRow);
   }
 
   // Rank: items matching the user's division first, then universal, then others.
+  // Role filter (manual chip) narrows the set; a prompt matches a role if it is
+  // tagged with that role or tagged "all".
   function rankedLibrary(){
     const dk = userDivisionKey();
     const term = libSearchTerm.trim().toLowerCase();
     let items = PROMPT_LIBRARY.slice();
     if (libModeFilter !== "all") items = items.filter(i => i.mode === libModeFilter);
+    if (libRoleFilter !== "all") items = items.filter(i => i.roles.includes(libRoleFilter) || i.roles.includes("all"));
     if (term) items = items.filter(i =>
       (i.title + " " + i.desc + " " + i.prompt).toLowerCase().includes(term));
     const tier = i => {
-      if (dk && i.divisions.includes(dk)) return 0;
+      if (divisionMatches(i, dk)) return 0;
       if (i.divisions.includes("all")) return 1;
       return 2;
     };
@@ -942,7 +1134,7 @@ body {
     const dk = userDivisionKey();
     let lastTier = -1;
     items.forEach(item => {
-      const t = (dk && item.divisions.includes(dk)) ? 0 : (item.divisions.includes("all") ? 1 : 2);
+      const t = divisionMatches(item, dk) ? 0 : (item.divisions.includes("all") ? 1 : 2);
       if (t !== lastTier){
         const lbl = document.createElement("div");
         lbl.className = "lib-group-label";
