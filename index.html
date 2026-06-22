@@ -942,7 +942,9 @@ body {
   }
   updateGreeting();
   msInit();
-  try { restoreConversation(); } catch (e) {}
+  // On load: run one-time legacy migration but DO NOT auto-open the last chat.
+  // Show the clean prompt screen instead. Past chats remain available via History.
+  try { migrateV1IfPresent(); renderSuggestions(); } catch (e) {}
   (function(){
     const nc = document.getElementById("newChatBtn");
     if (nc) nc.addEventListener("click", function(){ clearConversation(); });
