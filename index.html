@@ -35,12 +35,25 @@
     #10 Format controls  — one-click reshape buttons on every assistant turn
   Search "// >>> v1.2:" to find each addition.
   ============================================================================
+  v1.4 — WRITE-BACK WAVE 1 (DORMANT / FLAG-GATED)
+    Adds the confirm-before-execute UX for the five Wave 1 write actions
+    (Outlook draft, personal to-do, HubSpot note, Workamajig time entry,
+    Teams post). It is OFF in production and only reachable on a URL carrying
+    ?writeback=1. Wired to a STUB executor (logs, simulates latency, succeeds)
+    so it changes nothing until Mark's real write endpoints exist. Swapping in
+    the real call is a one-liner (set BSCE.executor). Search "// >>> v1.4:".
+    Nothing here touches the normal chat path; the plain URL is byte-for-byte
+    the same experience as v1.3.
+  ============================================================================
   INTEGRATION SEAMS FOR MARK — search "// >>> MARK:"
     1. AUTH      — DEMO_USER -> Entra ID claims (name, division)
     2. ENDPOINT  — CHAT_ENDPOINT -> Azure Function proxy
     3. BUDGET    — usage figure -> real per-user spend from App Insights
     4. MCP       — V1.5: Function attaches mcp_servers + Key Vault tokens
     5. TELEMETRY — fire usage event per message
+    6. WRITE     — V1.4 Wave 1: relay returns an `action` object to confirm, and
+                   exposes a write endpoint the confirm dialog calls on approve.
+                   See "// >>> MARK (WRITE):" near the bottom for the contract.
   Frontend NEVER holds the API key or connector tokens. Secrets live in Azure
   Key Vault and are used only by the Azure Function.
   ============================================================================
@@ -339,6 +352,67 @@ body {
 .lib-card .lc-desc{font-size:12px;font-weight:500;color:var(--aibios-text-muted);margin-top:5px;line-height:1.5;}
 .lib-card .lc-use{margin-top:9px;font-size:11px;font-weight:800;color:var(--bs-green);display:inline-flex;align-items:center;gap:5px;}
 .lib-empty{padding:36px 18px;text-align:center;color:var(--aibios-text-subtle);font-size:13px;font-weight:600;line-height:1.6;}
+
+/* ==========================================================================
+   >>> v1.4: CONFIRM-BEFORE-EXECUTE (write-back Wave 1) — DORMANT/FLAG-GATED.
+   Styles are inert until BSCE.open() is called, which only happens on a URL
+   carrying ?writeback=1. Scoped under .bsce- so nothing collides with the app.
+   ========================================================================== */
+.bsce-overlay{position:fixed;inset:0;z-index:9000;background:rgba(10,14,26,.46);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;padding:20px;opacity:0;pointer-events:none;transition:opacity .16s ease;}
+.bsce-overlay.bsce-open{opacity:1;pointer-events:auto;}
+.bsce-dialog{font-family:'Montserrat',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--aibios-text);background:var(--aibios-bg);width:100%;max-width:520px;max-height:calc(100vh - 40px);display:flex;flex-direction:column;border-radius:14px;box-shadow:0 24px 60px rgba(10,14,26,.28),0 4px 12px rgba(10,14,26,.12);transform:translateY(8px) scale(.985);transition:transform .16s ease;overflow:hidden;}
+.bsce-overlay.bsce-open .bsce-dialog{transform:translateY(0) scale(1);}
+.bsce-head{padding:20px 22px 16px;border-bottom:1px solid var(--aibios-border);display:flex;gap:14px;align-items:flex-start;}
+.bsce-icon{flex:0 0 auto;width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:rgba(0,168,114,.12);color:var(--bs-green-dim);}
+.bsce-icon svg{width:22px;height:22px;}
+.bsce-head-text{flex:1 1 auto;min-width:0;}
+.bsce-eyebrow{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--bs-green-dim);margin-bottom:3px;}
+.bsce-title{font-size:19px;font-weight:800;line-height:1.18;color:var(--aibios-text);letter-spacing:-.01em;}
+.bsce-sub{font-size:13px;color:var(--aibios-text-muted);margin-top:4px;line-height:1.45;font-weight:500;}
+.bsce-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;letter-spacing:.02em;padding:3px 9px;border-radius:999px;margin-top:9px;border:1px solid transparent;}
+.bsce-badge svg{width:12px;height:12px;}
+.bsce-badge.rev-self{background:rgba(0,168,114,.12);color:var(--bs-green-dim);border-color:rgba(0,168,114,.3);}
+.bsce-badge.rev-reversible{background:rgba(42,111,151,.12);color:#235d80;border-color:rgba(42,111,151,.3);}
+.bsce-badge.rev-visible{background:rgba(200,134,10,.14);color:#8a5e08;border-color:rgba(200,134,10,.35);}
+.bsce-body{padding:18px 22px;overflow-y:auto;}
+.bsce-preview-label{font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--aibios-text-subtle);margin-bottom:8px;}
+.bsce-card{background:var(--aibios-surface);border:1px solid var(--aibios-border);border-radius:9px;padding:14px 16px;}
+.bsce-row{display:flex;gap:12px;padding:6px 0;font-size:14px;align-items:baseline;}
+.bsce-row + .bsce-row{border-top:1px solid var(--aibios-border);}
+.bsce-key{flex:0 0 92px;color:var(--aibios-text-subtle);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.03em;padding-top:1px;}
+.bsce-val{flex:1 1 auto;color:var(--aibios-text);min-width:0;word-wrap:break-word;font-weight:500;}
+.bsce-val.muted{color:var(--aibios-text-subtle);font-style:italic;}
+.bsce-bodytext{white-space:pre-wrap;font-size:13.5px;line-height:1.55;color:var(--aibios-text-muted);max-height:200px;overflow-y:auto;margin-top:2px;font-weight:500;}
+.bsce-destination{margin-top:12px;font-size:12.5px;color:var(--aibios-text-subtle);display:flex;gap:6px;align-items:center;font-weight:600;}
+.bsce-destination svg{width:13px;height:13px;flex:0 0 auto;}
+.bsce-note{margin-top:12px;padding:10px 12px;border-radius:9px;font-size:12.5px;line-height:1.45;background:rgba(200,134,10,.12);border:1px solid rgba(200,134,10,.32);color:#7a4d0d;display:flex;gap:8px;font-weight:600;}
+.bsce-note svg{width:15px;height:15px;flex:0 0 auto;margin-top:1px;}
+.bsce-foot{padding:14px 22px 18px;border-top:1px solid var(--aibios-border);display:flex;gap:10px;justify-content:flex-end;align-items:center;flex-wrap:wrap;}
+.bsce-foot-spacer{flex:1 1 auto;}
+.bsce-btn{font-family:inherit;font-weight:700;font-size:14px;padding:10px 18px;border-radius:8px;cursor:pointer;border:1px solid transparent;transition:background .12s,border-color .12s;min-height:42px;}
+.bsce-btn-cancel{background:transparent;color:var(--aibios-text-muted);border-color:var(--aibios-border-soft);}
+.bsce-btn-cancel:hover{background:var(--aibios-surface);}
+.bsce-btn-confirm{background:var(--bs-green-core);color:#fff;box-shadow:0 4px 14px var(--bs-green-glow);}
+.bsce-btn-confirm:hover{background:var(--bs-green-dim);}
+.bsce-btn-confirm:disabled{opacity:.6;cursor:default;box-shadow:none;}
+.bsce-btn-confirm.danger{background:var(--bs-yellow);box-shadow:none;}
+.bsce-btn-confirm.danger:hover{background:#a8650f;}
+.bsce-spin{display:inline-block;width:14px;height:14px;margin-right:7px;vertical-align:-2px;border:2px solid rgba(255,255,255,.45);border-top-color:#fff;border-radius:50%;animation:bsce-rot .7s linear infinite;}
+@keyframes bsce-rot{to{transform:rotate(360deg);}}
+.bsce-result{padding:26px 22px;text-align:center;}
+.bsce-result-icon{width:48px;height:48px;border-radius:50%;margin:0 auto 14px;display:flex;align-items:center;justify-content:center;}
+.bsce-result-icon svg{width:26px;height:26px;}
+.bsce-result.ok .bsce-result-icon{background:rgba(0,168,114,.12);color:var(--bs-green-dim);}
+.bsce-result.err .bsce-result-icon{background:#FBE6E3;color:#B23A2E;}
+.bsce-result-title{font-size:18px;font-weight:800;color:var(--aibios-text);}
+.bsce-result-msg{font-size:13.5px;color:var(--aibios-text-muted);margin-top:5px;line-height:1.5;font-weight:500;}
+@media (max-width:520px){
+  .bsce-overlay{padding:0;align-items:flex-end;}
+  .bsce-dialog{max-width:100%;border-radius:16px 16px 0 0;max-height:92vh;}
+  .bsce-foot{flex-direction:column-reverse;align-items:stretch;}
+  .bsce-foot-spacer{display:none;}
+  .bsce-btn{width:100%;}
+}
 </style>
 </head>
 <body>
@@ -443,12 +517,22 @@ body {
   </div>
 </div>
 
+<!-- >>> v1.4: Confirm-before-execute dialog (write-back Wave 1). Inert until BSCE.open() is called (only on ?writeback=1). -->
+<div id="bsce-overlay" class="bsce-overlay" role="presentation">
+  <div id="bsce-dialog" class="bsce-dialog" role="dialog" aria-modal="true" aria-labelledby="bsce-title" aria-describedby="bsce-sub" tabindex="-1"></div>
+</div>
+
 <script>
   // >>> MARK: AUTH — populate from Entra ID claims in production.
   const DEMO_USER = { name: "Mark", division: "Entertainment" };
   // >>> MARK: ENDPOINT — Azure Function proxy (holds API key via Key Vault).
   const CHAT_ENDPOINT = "/api/claude/chat";
   const DEMO_MODE = true; // true = direct call for in-claude.ai preview; false = Azure Function
+
+  // >>> v1.4: WRITE-BACK FEATURE FLAG. OFF by default. Reachable ONLY on a URL
+  // carrying ?writeback=1 (e.g. .../index.html?writeback=1). Production users on
+  // the plain URL get the exact v1.3 experience; nothing write-related is wired.
+  const WRITEBACK_ENABLED = /[?&]writeback=1/.test(window.location.search);
 
   // ==========================================================================
   // MICROSOFT SSO (MSAL.js) — M365 connector sign-in  [UNCHANGED from v1.1]
@@ -1556,6 +1640,7 @@ body {
       "ABOUT BRANDSTAR: A full-service marketing and production company founded 2005, HQ in Deerfield Beach FL with a second studio in Hollywood FL. Co-founded by Mark Alfieri (CEO) and Doug Campbell (CRO); parent is O2 Media Inc. Tagline 'We grow brands fast.' Mission: make a positive impact on people's lives — connect people with brands to do life better. Fully integrated production company, marketing agency, and content platform. ~2/3 of Fortune 500 have worked with BrandStar; content reaches ~124M households via Lifetime, FOX Business, Bloomberg; 8,000+ projects completed. " +
       "IDD METHOD: Identify what makes a brand unique, Develop creative that educates and inspires, Distribute across awareness/consideration/conversion. " +
       "FOUR DIVISIONS: (1) BrandStar Entertainment (since 2008) — branded-TV division, pioneers of 'branded education' (editorial-style third-party-endorsed TV where the brand lives inside the story). Nine national shows on Lifetime/FOX Business/Bloomberg; national + local segments, sponsorship, social support. President Nicole Oropesa. (2) BrandStar Studios — South Florida production powerhouse, early adopter of LED volumes and in-camera VFX; two facilities (Deerfield Beach 77' curved LED wall; Hollywood 30,000 sq ft, 60' LED stage, fashion studios). Creative development, virtual production, 2D/3D animation + Unreal Engine, post, DRTV, studio rentals. (3) BrandStar Marketing — agency group: research, brand identity, media buying (TV/OTT/radio/CTV), digital/performance advertising, PR/thought leadership, social/influencer, web/SEO/AIO, e-commerce/CRO, CRM/automation, outbound. (4) BrandStar Connect (since 2020) — boutique BPO partner, white-label extension of client teams; inbound/outbound, lead conversion, HIPAA-compliant healthcare comms, education enrollment, B2B appointment setting, Five9 contact-center tech; hybrid nearshore (Trinidad center + US campaign leadership); serves healthcare, education, consumer/DR, B2B. " +
+      "IDD METHOD: Identify what makes a brand unique, Develop creative that educates and inspires, Distribute across awareness/consideration/conversion. " +
       "AGENCY BRANDS (within Marketing): " +
       "BrandStar Digital — full-service, AI-native digital marketing agency in South Florida (President: Seth Rand). The performance-marketing engine of the group. Services: paid digital media (Google, Meta, paid social/search), SEO, AI Search Optimization (AIO) and Answer Engine Optimization (AEO), organic social management, content creation, web design and development, email and marketing automation, e-commerce/conversion optimization, and outsourced CMO-level strategy. A certified Semrush Enterprise Partner with 20+ years of search authority. Data-driven and results-focused. Always written 'BrandStar Digital,' never 'BSD Digital.' " +
       "Kreps PR & Marketing — strategic communications and PR firm, 30+ years; staffed by former journalists, publicists, and ex-Fortune 500 comms directors. Specializes in luxury real estate, hospitality, lifestyle, banking/finance, corporate, and non-profit. Marquee clients include Porsche Design Tower, Biltmore Hotel, Amerant Bank, Berkshire Hathaway HomeServices EWM Realty, Housing Trust Group, Informa Markets. " +
@@ -1644,6 +1729,8 @@ body {
         bubble("assistant", data.reply || "(No response)");
         history.push({ role:"assistant", content: data.reply });
         if (data.usage) renderUsage(data.usage); // >>> v1.2: usage meter (#9), optional relay field
+        // >>> v1.4: if write-back is enabled and the relay proposes an action, open the confirm dialog.
+        if (WRITEBACK_ENABLED && data.action && window.BSCE) { BSCE.open(data.action); }
         saveConversation();
       }
     } catch(err){
@@ -1652,6 +1739,208 @@ body {
     } finally { sendBtn.disabled=false; input.focus(); }
   }
 </script>
+
+<!-- ==========================================================================
+     >>> v1.4: CONFIRM-BEFORE-EXECUTE COMPONENT (write-back Wave 1) — DORMANT.
+     Self-contained. Exposes window.BSCE. Does nothing until BSCE.open(action)
+     is called, which only happens when WRITEBACK_ENABLED is true (?writeback=1).
+     The executor is a STUB until Mark's write endpoints exist — see
+     "// >>> MARK (WRITE):" below for the one-line swap and the action contract.
+     ========================================================================== -->
+<script>
+(function(){
+  "use strict";
+
+  var I = {
+    draft:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 6 12 13 2 6"/><rect x="2" y="4" width="20" height="16" rx="2"/></svg>',
+    todo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
+    hubspot:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 14h6M9 17h4"/></svg>',
+    wmj:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+    teams:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h2a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-1v3l-3-3H9a2 2 0 0 1-2-2"/><path d="M14 3H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h1v3l3-3h6a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2Z"/></svg>',
+    ok:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>',
+    err:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v5M12 16.5v.5"/><circle cx="12" cy="12" r="9"/></svg>',
+    lockSelf:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>',
+    undo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M3 13a9 9 0 1 0 3-7.7L3 8"/></svg>',
+    eye:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>',
+    pin:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.7 7-12a7 7 0 1 0-14 0c0 5.3 7 12 7 12Z"/><circle cx="12" cy="9" r="2.5"/></svg>',
+    warn:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>'
+  };
+
+  var TYPES = {
+    outlook_draft:{
+      eyebrow:"Outlook", icon:I.draft, title:"Save this as an Outlook draft",
+      sub:"A draft will be created in your mailbox. Nothing sends — you review and send it yourself.",
+      rev:{cls:"rev-reversible",label:"Won't send",icon:I.undo}, verb:"Create draft", danger:false,
+      dest:"Drafts folder, your mailbox",
+      render:function(p){ return rowsCard([["To", esc(p.to)||muted("(no recipient — you add it)")],["Subject", esc(p.subject)||muted("(none)")]]) + bodyBlock("Message", p.body); }
+    },
+    todo_create:{
+      eyebrow:"Personal to-do", icon:I.todo, title:"Create a personal to-do",
+      sub:"Adds a task to your own list. Only you see it.",
+      rev:{cls:"rev-self",label:"Self-scoped",icon:I.lockSelf}, verb:"Create to-do", danger:false,
+      dest:"Your personal task list",
+      render:function(p){ return rowsCard([["Task", esc(p.title)],["Due", esc(p.due)||muted("No due date")]]) + (p.notes ? bodyBlock("Notes", p.notes) : ""); }
+    },
+    hubspot_note:{
+      eyebrow:"HubSpot", icon:I.hubspot, title:"Add a note in HubSpot",
+      sub:"Attaches a timestamped note, signed with your name. It does not change any deal, stage, or field.",
+      rev:{cls:"rev-reversible",label:"Additive only",icon:I.undo}, verb:"Add note", danger:false,
+      dest:null,
+      render:function(p){ return rowsCard([["On", esc(p.recordName)+(p.recordType?("  ·  "+esc(p.recordType)):"")]]) + bodyBlock("Note", p.note); }
+    },
+    wmj_time_entry:{
+      eyebrow:"Workamajig", icon:I.wmj, title:"Log a time entry",
+      sub:"Records hours against a project on your own timesheet. Additive and editable in Workamajig.",
+      rev:{cls:"rev-self",label:"Your hours",icon:I.lockSelf}, verb:"Log time", danger:false,
+      dest:"Your Workamajig timesheet",
+      render:function(p){ return rowsCard([["Project", esc(p.project)],["Task", esc(p.task)||muted("(unspecified)")],["Hours", "<strong>"+esc(p.hours)+"</strong>"],["Date", esc(p.date)||muted("Today")]]) + (p.description ? bodyBlock("Description", p.description) : ""); }
+    },
+    teams_post:{
+      eyebrow:"Microsoft Teams", icon:I.teams, title:"Post a message to Teams",
+      sub:"This is visible to colleagues the moment it posts. You can edit or delete it afterward in Teams.",
+      rev:{cls:"rev-visible",label:"Visible to colleagues",icon:I.eye}, verb:"Post to Teams", danger:true,
+      dest:null,
+      render:function(p){ return rowsCard([["Channel", esc(p.channel)],["Team", esc(p.team)||muted("")]].filter(function(r){return r[1];})) + bodyBlock("Message", p.message) + noteBlock("Once posted, colleagues can see this immediately. Review it before confirming."); }
+    }
+  };
+
+  function esc(s){ if(s===undefined||s===null) return ""; return String(s).replace(/[&<>"']/g,function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+  function muted(t){ return '<span class="bsce-val muted">'+esc(t)+'</span>'; }
+  function rowsCard(rows){ var inner = rows.map(function(r){ return '<div class="bsce-row"><div class="bsce-key">'+esc(r[0])+'</div><div class="bsce-val">'+r[1]+'</div></div>'; }).join(""); return '<div class="bsce-card">'+inner+'</div>'; }
+  function bodyBlock(label, text){ return '<div style="margin-top:14px;"><div class="bsce-preview-label">'+esc(label)+'</div><div class="bsce-bodytext">'+(esc(text)||muted("(empty)"))+'</div></div>'; }
+  function destBlock(text){ return '<div class="bsce-destination">'+I.pin+'<span>Goes to: '+esc(text)+'</span></div>'; }
+  function noteBlock(text){ return '<div class="bsce-note">'+I.warn+'<span>'+esc(text)+'</span></div>'; }
+
+  var overlay = document.getElementById("bsce-overlay");
+  var dialog  = document.getElementById("bsce-dialog");
+  if(!overlay || !dialog) return; // markup not present — bail safely
+  var current = null, lastFocus = null, onConfirmCb = null;
+
+  // >>> MARK (WRITE): STUB executor. Replace by setting BSCE.executor to a function
+  // that POSTs `action` to your write endpoint and returns a Promise (resolve =
+  // success, reject(Error) = failure). The action contract is:
+  //   { type: "outlook_draft"|"todo_create"|"hubspot_note"|"wmj_time_entry"|"teams_post",
+  //     preview: { ...fields the user sees... }, ...any IDs/handles the relay needs }
+  // Per-type preview fields:
+  //   outlook_draft : to, subject, body
+  //   todo_create   : title, due, notes?
+  //   hubspot_note  : recordName, recordType, note
+  //   wmj_time_entry: project, task?, hours, date, description?
+  //   teams_post    : channel, team?, message
+  function defaultExecutor(action){
+    return new Promise(function(resolve){
+      console.log("[BSCE stub] would execute:", JSON.parse(JSON.stringify(action)));
+      setTimeout(resolve, 850);
+    });
+  }
+
+  var BSCE = { executor: defaultExecutor, open: open, close: close };
+
+  function render(action){
+    var cfg = TYPES[action.type];
+    if(!cfg){ console.warn("[BSCE] unknown action type:", action.type); return; }
+    var p = action.preview || {};
+    var rev = cfg.rev;
+    dialog.innerHTML =
+      '<div class="bsce-head"><div class="bsce-icon">'+cfg.icon+'</div><div class="bsce-head-text">'+
+        '<div class="bsce-eyebrow">'+esc(cfg.eyebrow)+'</div>'+
+        '<div class="bsce-title" id="bsce-title">'+esc(cfg.title)+'</div>'+
+        '<div class="bsce-sub" id="bsce-sub">'+esc(cfg.sub)+'</div>'+
+        '<span class="bsce-badge '+rev.cls+'">'+rev.icon+esc(rev.label)+'</span>'+
+      '</div></div>'+
+      '<div class="bsce-body"><div class="bsce-preview-label">Exactly what will be written</div>'+
+        cfg.render(p)+(cfg.dest ? destBlock(cfg.dest) : "")+
+      '</div>'+
+      '<div class="bsce-foot">'+
+        '<button type="button" class="bsce-btn bsce-btn-cancel" id="bsce-cancel">Cancel</button>'+
+        '<div class="bsce-foot-spacer"></div>'+
+        '<button type="button" class="bsce-btn bsce-btn-confirm'+(cfg.danger?" danger":"")+'" id="bsce-confirm">'+esc(cfg.verb)+'</button>'+
+      '</div>';
+    dialog.querySelector("#bsce-cancel").addEventListener("click", function(){ close("cancel"); });
+    dialog.querySelector("#bsce-confirm").addEventListener("click", confirm);
+  }
+
+  function renderResult(ok, action, errMsg){
+    dialog.innerHTML =
+      '<div class="bsce-result '+(ok?"ok":"err")+'">'+
+        '<div class="bsce-result-icon">'+(ok?I.ok:I.err)+'</div>'+
+        '<div class="bsce-result-title">'+(ok?"Done":"Couldn’t complete that")+'</div>'+
+        '<div class="bsce-result-msg">'+(ok ? esc(successMsg(action)) : esc(errMsg||"Something went wrong. Nothing was written. Try again."))+'</div>'+
+      '</div>'+
+      '<div class="bsce-foot"><div class="bsce-foot-spacer"></div>'+
+        '<button type="button" class="bsce-btn bsce-btn-confirm" id="bsce-done">'+(ok?"Close":"OK")+'</button>'+
+      '</div>';
+    dialog.querySelector("#bsce-done").addEventListener("click", function(){ close(ok?"done":"error"); });
+    dialog.querySelector("#bsce-done").focus();
+  }
+
+  function successMsg(action){
+    switch(action.type){
+      case "outlook_draft": return "Draft saved to your Outlook. Open Outlook to review and send.";
+      case "todo_create":   return "Added to your personal to-do list.";
+      case "hubspot_note":  return "Note added in HubSpot, signed with your name.";
+      case "wmj_time_entry":return "Time entry logged to your Workamajig timesheet.";
+      case "teams_post":    return "Posted to Teams. You can edit or delete it from Teams if needed.";
+      default: return "Action completed.";
+    }
+  }
+
+  function open(action, opts){
+    opts = opts || {};
+    current = action; onConfirmCb = opts.onConfirm || null;
+    lastFocus = document.activeElement;
+    render(action);
+    overlay.classList.add("bsce-open");
+    document.addEventListener("keydown", onKey, true);
+    setTimeout(function(){ dialog.focus(); var c = dialog.querySelector("#bsce-confirm"); if(c) c.focus(); }, 30);
+  }
+  function close(reason){
+    overlay.classList.remove("bsce-open");
+    document.removeEventListener("keydown", onKey, true);
+    current = null; onConfirmCb = null;
+    if(lastFocus && lastFocus.focus){ try{ lastFocus.focus(); }catch(e){} }
+  }
+  function confirm(){
+    if(!current) return;
+    var btn = dialog.querySelector("#bsce-confirm");
+    var cancel = dialog.querySelector("#bsce-cancel");
+    if(btn){ btn.disabled = true; btn.innerHTML = '<span class="bsce-spin"></span>Working…'; }
+    if(cancel){ cancel.disabled = true; }
+    var action = current;
+    Promise.resolve(BSCE.executor(action))
+      .then(function(){ if(onConfirmCb){ try{ onConfirmCb(action); }catch(e){} } renderResult(true, action); })
+      .catch(function(err){ renderResult(false, action, err && err.message); });
+  }
+  function onKey(e){
+    if(e.key==="Escape"){ e.preventDefault(); close("escape"); return; }
+    if(e.key==="Tab"){
+      var f = dialog.querySelectorAll('button:not([disabled])'); if(!f.length) return;
+      var first=f[0], last=f[f.length-1];
+      if(e.shiftKey && document.activeElement===first){ e.preventDefault(); last.focus(); }
+      else if(!e.shiftKey && document.activeElement===last){ e.preventDefault(); first.focus(); }
+    }
+  }
+  overlay.addEventListener("mousedown", function(e){ if(e.target===overlay) close("backdrop"); });
+
+  window.BSCE = BSCE;
+
+  // >>> v1.4: Dev QA harness. Only attaches on ?writeback=1 AND ?bsceqa=1.
+  // Lets you open each of the 5 dialogs against the stub before any relay wiring.
+  // Type bsceQA() in the console (on a ?writeback=1 page) to fire the samples.
+  if (/[?&]writeback=1/.test(window.location.search)) {
+    var SAMPLES = {
+      outlook_draft:{ type:"outlook_draft", preview:{ to:"meg.tiffany@brittonmdg.com", subject:"Britton AI plan — inputs we need", body:"Hi Meg,\n\nFollowing up on the AI enablement plan. Two files attached and three quick inputs to finalize the finance mountain.\n\nBest,\nSeth" }},
+      todo_create:{ type:"todo_create", preview:{ title:"Send Mark the two branch decisions", due:"Tomorrow, 9:00 AM", notes:"Hold the deletes until he confirms main is the source of truth." }},
+      hubspot_note:{ type:"hubspot_note", preview:{ recordName:"Britton Marketing & Design", recordType:"Company", note:"Consolidated AI plan sent to Meg + Eri. Awaiting finance-mountain inputs." }},
+      wmj_time_entry:{ type:"wmj_time_entry", preview:{ project:"BrandStar AI Assistant — Wave 1", task:"Frontend — confirm UX", hours:"2.5", date:"Jun 22, 2026", description:"Built shared confirm dialog, 5 action types, flag-gated." }},
+      teams_post:{ type:"teams_post", preview:{ channel:"AI Enablement", team:"BrandStar Digital", message:"Confirm-before-execute UX for write-back Wave 1 is built and flag-gated. Lights up when the relay write endpoints land." }}
+    };
+    window.bsceQA = function(type){ BSCE.open(SAMPLES[type || "teams_post"]); };
+    console.log("[BSCE] write-back test mode on. Try: bsceQA('outlook_draft' | 'todo_create' | 'hubspot_note' | 'wmj_time_entry' | 'teams_post')");
+  }
+})();
+</script>
+
 <script>
 /* Relay BUILD badge — reads bs-widget-relay /api/version (stamped on each deploy). [UNCHANGED] */
 (function(){
