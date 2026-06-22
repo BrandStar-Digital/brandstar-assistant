@@ -1626,6 +1626,8 @@ body {
                 acc += j.delta.text || "";
                 const now = Date.now();
                 if (now - lastPaint > 60) { paintBubble(bub, acc); lastPaint = now; }
+              } else if (j.type === "usage_meter" && j.usage) {
+                renderUsage(j.usage); // live dollar meter over streaming (relay emits at stream end)
               }
             }
           }
