@@ -1433,6 +1433,26 @@ body {
     if (!skipPersist) { saveConversation(); }
   }
 
+  // >>> streaming helpers: progressively render an assistant answer from SSE,
+  // then finalize it exactly like bubble() (actions + reshape row + persistence).
+  function startAssistantBubble(){
+    if (welcome.parentNode) welcome.remove();
+    const m = document.createElement("div"); m.className = "message assistant";
+    const av = document.createElement("div"); av.className = "avatar avatar-assistant"; av.textContent = "B";
+    const bub = document.createElement("div"); bub.className = "bubble"; bub.innerHTML = "";
+    m.appendChild(av); m.appendChild(bub); thread.appendChild(m); thread.scrollTop = thread.scrollHeight;
+    return bub;
+  }
+  function paintBubble(bub, text){
+    if (window.marked) bub.innerHTML = marked.parse(text); else bub.textContent = text;
+    thread.scrollTop = thread.scrollHeight;
+  }
+  function finalizeAssistantBubble(bub, text){
+    paintBubble(bub, text);
+    attachAssistantActions(bub, text);
+    thread.scrollTop = thread.scrollHeight;
+  }
+
   function typing(on){
     if(on){
       if (welcome.parentNode) welcome.remove();
@@ -1548,7 +1568,7 @@ body {
       (DIVISION_CONTEXT[divisionKeyFromDepartment(userProfile.department) || DEMO_USER.division]||"") + " " + MODES[mode].sys;
 
     try {
-      const canStream = false; // tools active — streaming stays off until relay buffers tool turns
+      const canStream = true; // relay now buffers tool turns server-side and streams the final answer as SSE
       const msGraphToken = await getGraphToken();
       const res = await fetch(WORKER_URL, {
         method:"POST",
@@ -1580,13 +1600,50 @@ body {
         return;
       }
 
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      typing(false);
-      bubble("assistant", data.reply || "(No response)");
-      history.push({ role:"assistant", content: data.reply });
-      if (data.usage) renderUsage(data.usage); // >>> v1.2: usage meter (#9), optional relay field
-      saveConversation();
+      const ctype = res.headers.get("content-type") || "";
+      if (canStream && ctype.indexOf("text/event-stream") >= 0 && res.body && res.body.getReader) {
+        // Streaming path: the relay resolves any tool rounds server-side, then
+        // streams the final assistant answer as SSE. Render deltas live; fall
+        // back to the JSON path automatically if this isn't a stream.
+        typing(false);
+        const bub = startAssistantBubble();
+        let acc = "", buf = "", lastPaint = 0;
+        const reader = res.body.getReader();
+        const dec = new TextDecoder();
+        try {
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buf += dec.decode(value, { stream: true });
+            let idx;
+            while ((idx = buf.indexOf("\n")) >= 0) {
+              const line = buf.slice(0, idx).trim(); buf = buf.slice(idx + 1);
+              if (!line.startsWith("data:")) continue;
+              const pl = line.slice(5).trim();
+              if (!pl || pl === "[DONE]") continue;
+              let j; try { j = JSON.parse(pl); } catch { continue; }
+              if (j.type === "content_block_delta" && j.delta && j.delta.type === "text_delta") {
+                acc += j.delta.text || "";
+                const now = Date.now();
+                if (now - lastPaint > 60) { paintBubble(bub, acc); lastPaint = now; }
+              }
+            }
+          }
+        } catch (streamErr) { /* render whatever streamed so far */ }
+        const finalText = acc || "(No response)";
+        finalizeAssistantBubble(bub, finalText);
+        transcript.push({ role: "assistant", text: finalText });
+        history.push({ role: "assistant", content: finalText });
+        saveConversation();
+      } else {
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        typing(false);
+        bubble("assistant", data.reply || "(No response)");
+        history.push({ role:"assistant", content: data.reply });
+        if (data.usage) renderUsage(data.usage); // >>> v1.2: usage meter (#9), optional relay field
+        saveConversation();
+      }
     } catch(err){
       typing(false);
       bubble("assistant", "Couldn't reach the assistant: " + err.message + "\n\nThis is usually a temporary connection issue — try again in a moment. If it persists, let your administrator know.");
