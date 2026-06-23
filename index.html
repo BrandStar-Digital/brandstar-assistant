@@ -34,7 +34,17 @@
     #9  Usage meter      — proactive allowance pill; reads optional relay `usage`
     #10 Format controls  — one-click reshape buttons on every assistant turn
   Search "// >>> v1.2:" to find each addition.
-  ============================================================================
+v1.6 — PROMPT LIBRARY EXPANSION (frontend-only; data + comment changes)
+    Adds 34 capability-honest prompts to PROMPT_LIBRARY (63 -> 97), covering
+    BrandStar Entertainment, Studios, Kreps PR, Kreps Social, Trefoil, Britton,
+    and BrandStar Digital, plus an admin-ops power set (spreadsheet-driven
+    reporting, forecasting, variance, KPI extraction) and finance / recruitment /
+    IT tasks scoped to the AdminOps role — Finance/HR/IT are seat-holding
+    departments, not divisions, so they get no standalone group. Every prompt
+    maps to what the widget does today (read-only HubSpot/M365/SharePoint/Teams/
+    WMJ-projects + client-side CSV/XLSX upload + the five modes); none implies a
+    connector the relay lacks. Pure data — no relay/Azure dependency, no change
+    to the chat, write-back, or streaming paths.
   ============================================================================
   v1.5 — WRITE-BACK WAVE 1 ACTIVATED (flag-gated; plain URL unchanged)
     Lights up the dormant v1.4 confirm UX against Mark's live relay write
@@ -864,8 +874,121 @@ body {
     { title:"Paid media performance readout", mode:"summarize", divisions:["Digital","Marketing"], roles:["Marketing","Account"], desc:"Translate paid campaign numbers into plain language.",
       prompt:"I'll paste paid media performance data (or attach a CSV/Excel export). Give me a plain-language readout: what's working, what's underperforming, budget pacing, and 3 prioritized recommendations. Lead with the bottom line." },
     { title:"Website / landing page CRO ideas", mode:"brainstorm", divisions:["Digital","Marketing"], roles:["Marketing"], desc:"Conversion ideas for a page.",
-      prompt:"For the web page or landing page I describe (or paste the copy/URL context), suggest 6 conversion-rate improvements — headline, structure, trust signals, CTA, friction. Prioritize them by likely impact and tell me which to test first." }
-  ];
+      prompt:"For the web page or landing page I describe (or paste the copy/URL context), suggest 6 conversion-rate improvements — headline, structure, trust signals, CTA, friction. Prioritize them by likely impact and tell me which to test first." },
+
+    // ======================================================================
+    // ============ v1.6 EXPANSION — added divisions + admin-ops ============
+    // Capability-honest: every prompt maps to what the widget does today
+    // (read-only HubSpot/M365/SharePoint/Teams/WMJ-projects, file upload,
+    // the five modes). No prompt implies a connector the relay lacks.
+    // Finance/HR/IT are seat-holding DEPARTMENTS, not divisions — so there are
+    // no standalone groups for them. Instead, the finance / recruitment / IT
+    // tasks below are scoped to the AdminOps role, for the admin-operations
+    // person inside any division who handles this work without an Enterprise seat.
+    // ======================================================================
+
+    // ---- BrandStar Entertainment (additional) ----
+    { title:"Sponsorship recap for a brand partner", mode:"write", divisions:["Entertainment"], roles:["Sales","Account"], desc:"A post-air recap a brand can circulate internally.",
+      prompt:"Draft a post-air recap email for a brand that ran a segment. Cover: what aired and where, the deliverables they received (segment, digital version, :30 social short, landing page, OTT distribution), and a warm line teeing up what's next. I'll give you the brand and show — ask if I haven't. Client-ready tone." },
+    { title:"Show audience one-liner", mode:"write", divisions:["Entertainment"], roles:["Sales","Account","Marketing"], desc:"A crisp audience description for a pitch or deck.",
+      prompt:"Write a tight, persuasive one-paragraph audience description for the show I name, suitable for a pitch deck or one-sheet. Lead with who watches and why a brand should care. If I give you reach or demo figures, work them in; flag anything you'd confirm before it goes external." },
+    { title:"Segment angle brainstorm", mode:"brainstorm", divisions:["Entertainment"], roles:["Production","Account"], desc:"Story angles to make a brand's segment compelling.",
+      prompt:"For the brand and show I name, brainstorm 5 segment story angles that make the brand's message feel like genuine branded education, not an ad. For each: the hook, the expert or proof element, and the takeaway for the viewer. Recommend the strongest two." },
+
+    // ---- BrandStar Studios ----
+    { title:"Studio capabilities one-pager", mode:"write", divisions:["Studios"], roles:["Sales","Account","Production"], desc:"A persuasive overview of what the studios offer.",
+      prompt:"Draft a one-page capabilities overview for BrandStar Studios for a prospective client. Cover the LED volumes and in-camera VFX, the two facilities (Deerfield Beach curved LED wall; Hollywood 30,000 sq ft / 60' LED stage), virtual production, animation/Unreal, and post. Frame it around what it lets a client do, not just a feature list. Polish like a real deliverable." },
+    { title:"Shoot prep checklist", mode:"summarize", divisions:["Studios","Entertainment"], roles:["Production"], desc:"A complete pre-production checklist for a shoot.",
+      prompt:"From the shoot I describe, build a pre-production checklist grouped by phase: pre-pro (script, talent, locations, props, permits), production day (crew, gear, schedule), and wrap/delivery. Note dependencies and flag anything commonly forgotten on an LED-volume or virtual-production shoot." },
+    { title:"Virtual production explainer for a client", mode:"write", divisions:["Studios"], roles:["Account","Sales","Production"], desc:"Plain-language explanation of LED/virtual production value.",
+      prompt:"Write a short, plain-language explainer a client could read that describes what LED-volume / virtual production is and why it benefits their project — speed, control, fewer location days, in-camera final pixels. Keep it jargon-light and benefit-led, about 200 words." },
+    { title:"Estimate inputs checklist", mode:"summarize", divisions:["Studios"], roles:["Production","AdminOps"], desc:"What you need to gather before scoping a production estimate.",
+      prompt:"For the production I describe, list every input I need to gather before building an estimate — crew, gear, stage time, talent, post, deliverables, revisions, contingencies. Group it so I can hand it to the client as a single intake request rather than a back-and-forth. Flag the items people most often forget to ask about." },
+
+    // ---- Kreps PR (additional) ----
+    { title:"Media list build brief", mode:"research", divisions:["Kreps","Marketing"], roles:["Marketing","Account"], desc:"A structured starting point for a targeted media list.",
+      prompt:"For the announcement and industry I describe, outline the types of outlets and beats I should target for a media list (trade, regional, national, vertical), and the angle that fits each. This is a planning brief, not contact data — flag that I'll confirm specific journalists and current beats before pitching." },
+    { title:"Crisis holding statement", mode:"write", divisions:["Kreps","Marketing"], roles:["Account","Marketing"], desc:"A calm, buy-time statement while facts are confirmed.",
+      prompt:"Draft a short holding statement for the situation I describe — acknowledges awareness, expresses appropriate concern, commits to sharing more once facts are confirmed, and avoids admitting fault or speculating. Then list 3 things to confirm internally before any fuller statement. Measured, human, on-message." },
+    { title:"Award / recognition submission", mode:"write", divisions:["Kreps","Marketing"], roles:["Marketing","Account"], desc:"A compelling draft of an awards or recognition entry.",
+      prompt:"Help me draft an awards submission for the client and award I name. Ask for the criteria if I haven't given them, then write a compelling entry that maps the client's accomplishments to each criterion. Mark where I need to confirm specific metrics or supporting evidence." },
+
+    // ---- Kreps Social ----
+    { title:"Social content calendar outline", mode:"brainstorm", divisions:["Kreps","Marketing"], roles:["Marketing"], desc:"A themed content calendar starting point for a client.",
+      prompt:"Build a one-month social content calendar outline for the client and platforms I describe. Give me weekly themes and 3-4 post concepts per week (mix of educational, social proof, behind-the-scenes, and promotional), each with a one-line description. Note which posts could repurpose across platforms." },
+    { title:"Caption set for one asset", mode:"write", divisions:["Kreps","Marketing","Britton"], roles:["Marketing"], desc:"Multiple caption options for a single piece of content.",
+      prompt:"For the post or asset I describe, write 4 caption options in distinct tones (punchy, warm, informative, playful), each platform-appropriate for the platform I name, with a clear CTA and a tasteful hashtag set. Tell me which you'd lead with and why." },
+    { title:"Community response templates", mode:"write", divisions:["Kreps","Marketing"], roles:["Marketing","ClientServices"], desc:"On-brand replies for common comment/DM situations.",
+      prompt:"Draft on-brand response templates for the common social comment and DM situations I describe (e.g., praise, a question, a complaint, a sales inquiry). For each: a warm, concise reply and a note on when to take it to DM or escalate. Keep them adaptable, not robotic." },
+
+    // ---- Trefoil Group (additional) ----
+    { title:"B2B email nurture outline", mode:"brainstorm", divisions:["Trefoil","Marketing"], roles:["Marketing","Account"], desc:"A multi-touch nurture sequence mapped to buyer stages.",
+      prompt:"Outline a B2B email nurture sequence (5-6 touches) for the offering and audience I describe. For each email: the goal, the buyer stage it serves, the core message, and a subject line. Map it from awareness to a sales-ready CTA. Recommend timing between touches." },
+    { title:"Sales-enablement one-sheet", mode:"write", divisions:["Trefoil","Marketing"], roles:["Marketing","Sales"], desc:"A leave-behind that helps a B2B sales team sell.",
+      prompt:"Draft a B2B sales-enablement one-sheet for the product or service I describe. Structure: the buyer's problem, our solution, 3 differentiators, proof points (mark where to confirm), and a clear next step. Written for a decision-maker who skims. Flag any claim that needs a real metric." },
+    { title:"Trade show / event angle", mode:"brainstorm", divisions:["Trefoil","Marketing"], roles:["Marketing","Account"], desc:"Ways to stand out at a B2B industry event.",
+      prompt:"For the B2B client and industry event I name, brainstorm 5 ways they could stand out — booth concept, pre-show outreach, content hook, follow-up play, and a memorable takeaway. For each: the idea and why it fits a B2B buyer. Recommend the two highest-impact, lowest-lift options." },
+
+    // ---- Britton Marketing & Design (additional) ----
+    { title:"Retail / lifestyle launch concept", mode:"brainstorm", divisions:["Britton","Marketing"], roles:["Marketing"], desc:"Launch ideas for a consumer or home/lifestyle product.",
+      prompt:"Brainstorm 4 launch concepts for the consumer product I describe (home, lifestyle, fashion, color/paint). For each: the big idea, the emotional hook, the hero channel, and a sample headline. Lean into how it makes life feel better. Recommend the strongest and what to test." },
+    { title:"Seasonal campaign theme set", mode:"brainstorm", divisions:["Britton","Marketing"], roles:["Marketing"], desc:"Seasonal creative themes for a consumer brand.",
+      prompt:"For the consumer brand and upcoming season I name, give me 5 seasonal campaign themes. For each: the theme line, the mood/feeling, the audience moment it taps, and one sample post or headline. Keep it warm and human, never generic 'happy holidays' filler." },
+    { title:"Product description set", mode:"write", divisions:["Britton","Marketing"], roles:["Marketing"], desc:"E-commerce-ready descriptions for a product line.",
+      prompt:"Write e-commerce product descriptions for the items I describe or attach. For each: a benefit-led headline, a short evocative paragraph, and 3 scannable bullet features. Consistent voice across the set, warm and specific, never clichéd. If I attach a spreadsheet of products, work from it row by row." },
+
+    // ---- BrandStar Digital (additional) ----
+    { title:"SEO content brief", mode:"write", divisions:["Digital","Marketing"], roles:["Marketing"], desc:"A writer-ready brief for a target keyword.",
+      prompt:"Build an SEO content brief for the target topic/keyword I name. Include: search intent, a working title, an H2/H3 outline, key points to cover, related questions to answer, internal-link ideas, and a target word count. Flag where I should confirm current search data before committing." },
+    { title:"Google/Meta ad copy set", mode:"write", divisions:["Digital","Marketing"], roles:["Marketing"], desc:"Platform-ready ad variations to test.",
+      prompt:"Write ad copy for the campaign I describe. For Google: 5 headlines (≤30 chars) and 3 descriptions (≤90 chars). For Meta: 3 primary-text variations, 3 headlines, and a description. Match the offer and audience I give you, and tell me which angle you'd test first." },
+    { title:"Monthly performance narrative", mode:"summarize", divisions:["Digital","Marketing"], roles:["Marketing","Account"], desc:"Turn a metrics export into a client-ready story.",
+      prompt:"I'll attach a performance export (CSV/Excel) or paste the numbers. Write a client-ready monthly narrative: the headline result, what drove it, what underperformed and why, and 3 prioritized recommendations for next month. Plain language, lead with the win, no raw metric-dumping." },
+    { title:"Audit a page's messaging", mode:"research", divisions:["Digital","Marketing"], roles:["Marketing"], desc:"A structured critique of a page's copy and clarity.",
+      prompt:"I'll paste a page's copy or describe the page. Audit its messaging: is the value proposition clear in 5 seconds, does the headline earn the scroll, are the CTAs obvious, what's missing, what's confusing. Give me a prioritized fix list, strongest lever first." },
+
+    // ======================================================================
+    // ADMIN-OPS POWER SET — spreadsheet-driven reporting & forecasting
+    // Built on the widget's real strength: client-side CSV/XLSX parsing. These
+    // work entirely from a file the user attaches — no connector required.
+    // Scoped to AdminOps (+ Account/Marketing where the work overlaps).
+    // ======================================================================
+    { title:"Build a report from a spreadsheet", mode:"summarize", divisions:["all"], roles:["AdminOps","Account","Marketing"], desc:"Turn a raw data export into a structured, readable report.",
+      prompt:"I'm attaching a spreadsheet. Build a clean report from it: a headline summary, the key totals and averages that matter, a breakdown by the most useful category, notable trends or outliers, and a short 'what this means' takeaway. Lay it out so I could drop it straight into a doc. Work only from the data in the file." },
+    { title:"Forecast from historical data", mode:"summarize", divisions:["all"], roles:["AdminOps","Account","Marketing"], desc:"Project a trend forward from a spreadsheet of past figures.",
+      prompt:"I'll attach a spreadsheet of historical figures (e.g., monthly revenue, spend, leads, hours). Identify the trend, project it forward for the period I specify, and show your assumptions plainly. Give me a conservative and an optimistic case, and flag what could throw the forecast off. Be clear this is a directional estimate from the data provided, not a guarantee." },
+    { title:"Compare actuals vs. plan", mode:"summarize", divisions:["all"], roles:["AdminOps","Account"], desc:"Variance read between two periods or budget vs. actual.",
+      prompt:"I'll attach (or paste) two sets of figures — budget vs. actual, or this period vs. last. Walk me through the variances: what moved, by how much, percentage change, and the most likely drivers given the categories. Lead with the 3 biggest swings. Flag anything I should verify before reporting it." },
+    { title:"Clean up a messy data file", mode:"edit", divisions:["all"], roles:["AdminOps","Marketing","Account"], desc:"Spot and fix issues in a spreadsheet before you use it.",
+      prompt:"I'm attaching a spreadsheet that needs cleanup. Flag duplicates, blanks, inconsistent formatting, and anything that looks like an error or outlier. Tell me what you'd fix and how, and if I describe the end use, suggest a cleaner structure. Don't drop any data — show me what's questionable so I decide." },
+    { title:"Summarize a budget or financial file", mode:"summarize", divisions:["all"], roles:["AdminOps"], desc:"Make sense of a budget, invoice batch, or financial export you attach.",
+      prompt:"I'm attaching a financial file (budget, invoice list, or export). Summarize what's in it, total and compare the key columns, flag anomalies, duplicates, or anything that looks off, and call out the figures that most need attention. Work only from the file — don't infer numbers that aren't there." },
+    { title:"Pull KPIs from a data dump", mode:"summarize", divisions:["all"], roles:["AdminOps","Marketing","Account"], desc:"Extract the metrics that matter from a large export.",
+      prompt:"I'll attach a large data export. Pull out the KPIs that matter for the goal I describe, compute them, and present them as a tight scorecard (metric, value, and a one-line read on each). Ignore the noise. Tell me if a KPI I'd expect isn't computable from this data." },
+
+    // ---- Finance-flavored admin-ops (file + general; financials walled off in connectors) ----
+    { title:"Draft a finance-related email", mode:"write", divisions:["all"], roles:["AdminOps"], desc:"A clear, professional note on an invoice, payment, or budget question.",
+      prompt:"Draft a clear, professional email on the finance topic I describe (invoice question, payment reminder, budget clarification, vendor follow-up). Precise and courteous, with exactly what I need and by when. Include a subject line. Ask me for specifics if I haven't given them." },
+    { title:"Expense / reconciliation checklist", mode:"summarize", divisions:["all"], roles:["AdminOps"], desc:"A repeatable step checklist for a recurring finance task.",
+      prompt:"For the recurring finance task I describe (month-end close, expense review, reconciliation), build a clear step-by-step checklist with the inputs needed at each step and the common errors to watch for. Make it something a colleague could follow without me." },
+
+    // ---- Recruitment-support admin-ops ----
+    { title:"Draft a job description", mode:"write", divisions:["all"], roles:["AdminOps"], desc:"A clear, appealing job posting from a few details.",
+      prompt:"Draft a job description for the role I describe. Include: a short team intro, the role's purpose, key responsibilities, must-have vs. nice-to-have qualifications, and what makes it a great place to work. Inclusive, clear language — no clichés or buzzword soup. Note anything I should have HR review before posting." },
+    { title:"Interview question set", mode:"brainstorm", divisions:["all"], roles:["AdminOps"], desc:"Structured, fair interview questions for a specific role.",
+      prompt:"Build an interview question set for the role I name. Group by: role-specific skills, problem-solving, collaboration/culture, and a couple of situational questions. For each, note what a strong answer signals. Keep it fair and consistent so different interviewers can compare notes." },
+    { title:"Screen resumes against a role", mode:"summarize", divisions:["all"], roles:["AdminOps"], desc:"A consistent first-pass read on candidates you attach.",
+      prompt:"I'll attach resume(s) or a candidate spreadsheet and describe the role. Give me a consistent first-pass read: how each candidate maps to the must-haves, notable strengths, gaps or questions to probe, and a suggested screen/pass/hold. Be objective and role-focused; flag anything that needs a human judgment call." },
+
+    // ---- IT / ops-support admin-ops ----
+    { title:"Draft an IT or ops status notice", mode:"write", divisions:["all"], roles:["AdminOps"], desc:"A clear notice for an outage, maintenance, or rollout.",
+      prompt:"Draft a clear notice for the IT or ops situation I describe (outage, scheduled maintenance, new tool rollout, security reminder). Cover: what's happening, who's affected, what they need to do (or not do), timing, and where to get help. Calm and plain — assume a non-technical audience." },
+    { title:"Write a how-to / SOP", mode:"write", divisions:["all"], roles:["AdminOps","PM"], desc:"Step-by-step instructions a non-technical colleague can follow.",
+      prompt:"Write step-by-step instructions for the task I describe (setting up a tool, a process, a common fix). Number the steps, keep each one short and action-led, note where someone commonly gets stuck, and add an 'if this doesn't work' line at the end. Assume a non-technical reader." },
+    { title:"Explain a technical issue simply", mode:"summarize", divisions:["all"], roles:["AdminOps","PM"], desc:"Translate a technical problem into plain language for staff or leadership.",
+      prompt:"I'll describe a technical issue or paste an error message. Explain in plain language what it likely means, the probable cause, and the options to resolve it — written so a non-technical colleague or leader can follow and make a decision. Flag what you'd verify before acting." }
+  ]
+    ;
 
   // Format presets (#10) — each reshapes the prior assistant answer.
   // We send a follow-up turn that references "your previous response" so the
