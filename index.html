@@ -35,6 +35,24 @@
     #10 Format controls  — one-click reshape buttons on every assistant turn
   Search "// >>> v1.2:" to find each addition.
   ============================================================================
+  ============================================================================
+  v1.5 — WRITE-BACK WAVE 1 ACTIVATED (flag-gated; plain URL unchanged)
+    Lights up the dormant v1.4 confirm UX against Mark's live relay write
+    endpoints. Five surgical changes, all gated behind ?writeback=1:
+      1. GRAPH_SCOPES += Mail.ReadWrite, Tasks.ReadWrite, ChannelMessage.Send
+      2. chat body sends writeback:WRITEBACK_ENABLED (relay offers propose_* only then)
+      3. action consumed on BOTH paths — JSON {action} (v1.4) AND the SSE
+         'action' frame that arrives just before message_stop (the real gap,
+         since canStream=true means production rides the streaming path)
+      4. BSCE.executor swapped from stub -> live POST to /api/widget-write
+         (MSAL Graph token + shared-secret gate; {ok:true} = success)
+      5. this marker
+    The plain URL (no ?writeback=1) is still byte-for-byte the v1.3 experience:
+    no write scopes are requested in practice (the dialog never opens), no
+    writeback flag changes relay behavior for read/chat, and the executor is
+    unreachable because BSCE.open() is never called. Reverting to fully dormant
+    is a one-line delete of the BSCE.executor assignment. Search "// >>> v1.5:".
+  ============================================================================
   v1.4 — WRITE-BACK WAVE 1 (DORMANT / FLAG-GATED)
     Adds the confirm-before-execute UX for the five Wave 1 write actions
     (Outlook draft, personal to-do, HubSpot note, Workamajig time entry,
@@ -545,7 +563,10 @@ body {
     },
     cache: { cacheLocation: "sessionStorage", storeAuthStateInCookie: false }
   };
-  const GRAPH_SCOPES = ["User.Read", "Mail.Read", "Calendars.Read", "Chat.Read"];
+  // >>> v1.5: write scopes appended for write-back Wave 1 (tenant-admin-consented).
+  // Relay calls Graph directly with the token MSAL acquires here. Until consent
+  // lands these simply return clean 403s on write — chat/read are unaffected.
+  const GRAPH_SCOPES = ["User.Read", "Mail.Read", "Calendars.Read", "Chat.Read", "Mail.ReadWrite", "Tasks.ReadWrite", "ChannelMessage.Send"];
 
   let msalApp = null, msAccount = null;
   const msalReady = (typeof msal !== "undefined" && msal && msal.PublicClientApplication);
@@ -1663,6 +1684,7 @@ body {
           useOpus,
           system,
           stream: canStream,
+          writeback: WRITEBACK_ENABLED, // >>> v1.5: relay offers propose_* tools only when true; plain URL stays byte-for-byte v1.3
           messages: history,
           msGraphToken: msGraphToken || undefined
         })
@@ -1693,6 +1715,7 @@ body {
         typing(false);
         const bub = startAssistantBubble();
         let acc = "", buf = "", lastPaint = 0;
+        let pendingAction = null; // >>> v1.5: holds a write-back action arriving via SSE 'action' frame
         const reader = res.body.getReader();
         const dec = new TextDecoder();
         try {
@@ -1713,6 +1736,8 @@ body {
                 if (now - lastPaint > 60) { paintBubble(bub, acc); lastPaint = now; }
               } else if (j.type === "usage_meter" && j.usage) {
                 renderUsage(j.usage); // live dollar meter over streaming (relay emits at stream end)
+              } else if (j.type === "action" && j.action) {
+                pendingAction = j.action; // >>> v1.5: write-back proposal arrives just before message_stop
               }
             }
           }
@@ -1722,6 +1747,8 @@ body {
         transcript.push({ role: "assistant", text: finalText });
         history.push({ role: "assistant", content: finalText });
         saveConversation();
+        // >>> v1.5: if a write-back action streamed in, open the confirm dialog (gated; dialog only exists on ?writeback=1).
+        if (WRITEBACK_ENABLED && pendingAction && window.BSCE) { BSCE.open(pendingAction); }
       } else {
         const data = await res.json();
         if (data.error) throw new Error(data.error);
@@ -1835,6 +1862,39 @@ body {
   }
 
   var BSCE = { executor: defaultExecutor, open: open, close: close };
+
+  // >>> v1.5: LIVE executor swap. On approve, POST the action object to the relay
+  // write endpoint as the signed-in user (MSAL Graph token + shared-secret transition
+  // gate). Resolve on {ok:true}; throw a readable message otherwise so the dialog
+  // shows a clean error and writes nothing. Still gated behind WRITEBACK_ENABLED —
+  // the dialog can only open on ?writeback=1, so production is untouched. Reverting
+  // to the stub is a one-line delete of this assignment.
+  var WRITE_ENDPOINT = "https://bs-widget-relay.azurewebsites.net/api/widget-write";
+  BSCE.executor = function(action){
+    return Promise.resolve(
+      (typeof getGraphToken === "function") ? getGraphToken() : null
+    ).then(function(token){
+      var payload = {};
+      for (var k in action) { if (Object.prototype.hasOwnProperty.call(action, k)) payload[k] = action[k]; }
+      payload.password = (typeof SHARED_PASSWORD !== "undefined") ? SHARED_PASSWORD : undefined;
+      if (token) payload.msGraphToken = token;
+      return fetch(WRITE_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      }).then(function(res){
+        return res.json().catch(function(){ return null; }).then(function(data){
+          if (res.ok && data && data.ok) return data;
+          var msg = (data && data.error && data.error.message)
+            ? data.error.message
+            : (res.status === 403
+                ? "You don't have permission for this action yet. Nothing was written."
+                : ("The write couldn't be completed (" + res.status + "). Nothing was written."));
+          throw new Error(msg);
+        });
+      });
+    });
+  };
 
   function render(action){
     var cfg = TYPES[action.type];
