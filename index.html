@@ -46,6 +46,30 @@ v1.6 — PROMPT LIBRARY EXPANSION (frontend-only; data + comment changes)
     connector the relay lacks. Pure data — no relay/Azure dependency, no change
     to the chat, write-back, or streaming paths.
   ============================================================================
+  v1.7 — DELIVERABLES, VOICE & RECIPES (frontend-only; ships to the plain URL,
+    no flag). Three additive features on top of v1.6. Search "// >>> v1.7:".
+      1. File generation — download the current assistant answer as a real,
+         formatted Word (.docx), Excel (.xlsx), PDF (.pdf), or PowerPoint (.pptx)
+         file, not just the existing Markdown. Replaces the single "Download"
+         action with a "Download as…" popover (the .md export is retained as one
+         option). All generation is client-side via CDN libraries (docx,
+         html2pdf.js, PptxGenJS) plus the already-loaded SheetJS for Excel.
+         Files download to the user's device only — this is read-side; no
+         upload/save-to-server, no relay call, no write-back path involved.
+         Excel emits a real sheet when the answer contains a Markdown table and
+         degrades gracefully otherwise.
+      2. Voice input — a mic button in the input row dictates a prompt into the
+         #input field via the browser Web Speech API. Hidden entirely when the
+         API is unsupported. Never auto-sends; user reviews then hits SEND.
+      3. Prompt recipes — named, ordered prompt chains saved per-user in
+         localStorage (bsaiwidget_recipes_v1_<whoKey>), mirroring the v1.6
+         favorites pattern. Surfaced as a "Recipes" group in the Prompt Library.
+         Steps load into the input one at a time; the user sends each. Create
+         from the current input, rename, delete.
+    None of these touch the chat, streaming, or write-back paths. BSCE, the
+    ?writeback=1 gate, SHARED_PASSWORD, MSAL config, relay endpoints, the
+    97-prompt library, and all v1.6 features are untouched.
+  ============================================================================
   v1.6 — READ-SIDE UX ADDITIONS (frontend-only; ships to the plain URL, no flag)
     Four additive, write-path-untouched enhancements on top of v1.5. Search
     "// >>> v1.6:" to find each addition.
@@ -114,6 +138,10 @@ v1.6 — PROMPT LIBRARY EXPANSION (frontend-only; data + comment changes)
 <!-- >>> v1.2: SheetJS for client-side XLSX/XLS parsing (#3). Parses in-browser; no upload of raw workbook. -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.4/lib/msal-browser.min.js"></script>
+<!-- >>> v1.7: client-side file generation libraries (Word/PDF/PowerPoint). XLSX (Excel) is already loaded above and reused for writing. All browser-side, jsDelivr pattern matching the existing includes; no relay dependency. -->
+<script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -435,6 +463,78 @@ a.src-chip:hover{border-color:var(--bs-green);color:var(--bs-green-dim);backgrou
 .message-actions.user-actions{justify-content:flex-end;}
 
 /* ==========================================================================
+   >>> v1.7: DELIVERABLES, VOICE & RECIPES — styles for the Download-as menu,
+   the voice mic button, and the Recipes group/modal. Additive only; matches the
+   existing .action-btn / .reshape-btn / panel aesthetic.
+   ========================================================================== */
+/* Download-as popover (anchored to the assistant action row) */
+.dl-wrap{position:relative;display:inline-flex;}
+.dl-menu{position:absolute;bottom:calc(100% + 6px);left:0;z-index:50;background:var(--aibios-bg);border:1px solid var(--aibios-border-soft);border-radius:9px;box-shadow:0 10px 30px rgba(10,14,26,.18);padding:6px;display:none;flex-direction:column;gap:3px;min-width:188px;}
+.dl-wrap.open .dl-menu{display:flex;}
+.dl-item{font-family:inherit;font-size:12px;font-weight:700;text-align:left;padding:8px 10px;background:transparent;color:var(--aibios-text-muted);border:1px solid transparent;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:8px;transition:color 140ms var(--ease),background 140ms var(--ease),border-color 140ms var(--ease);}
+.dl-item i{font-size:15px;width:16px;text-align:center;}
+.dl-item:hover{color:var(--aibios-text);border-color:var(--bs-green);background:rgba(0,168,114,.06);}
+.dl-item:disabled{opacity:.45;cursor:default;}
+.dl-item:disabled:hover{color:var(--aibios-text-muted);border-color:transparent;background:transparent;}
+.dl-item .dl-hint{margin-left:auto;font-size:9.5px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:var(--aibios-text-subtle);}
+/* Voice mic button — reuses .input-icon-btn; active recording state pulses green */
+.input-icon-btn.mic-on{color:var(--bs-green);opacity:1;animation:micPulse 1.1s ease-in-out infinite;}
+@keyframes micPulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.55;transform:scale(1.12);}}
+@media (prefers-reduced-motion: reduce){ .input-icon-btn.mic-on{animation:none;} }
+/* Recipes — pinned group label in the library (mirrors .lib-group-label.fav) */
+.lib-group-label.recipe{color:var(--bs-green-dim);display:flex;align-items:center;gap:6px;}
+.lib-group-label.recipe i{font-size:13px;}
+.recipe-card{border:1px solid var(--aibios-border-soft);border-radius:11px;padding:13px 15px;margin-bottom:9px;cursor:pointer;transition:border-color 160ms var(--ease),background 160ms var(--ease);}
+.recipe-card:hover{border-color:var(--bs-green);background:rgba(0,168,114,.05);}
+.recipe-card .rc-top{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.recipe-card .rc-title{font-size:13.5px;font-weight:800;color:var(--aibios-text);}
+.recipe-card .rc-count{font-size:10px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:var(--bs-green);background:rgba(0,168,114,.10);border-radius:5px;padding:2px 7px;flex-shrink:0;}
+.recipe-card .rc-actions{display:flex;gap:3px;}
+.recipe-card .rc-actions button{background:transparent;border:none;cursor:pointer;color:var(--aibios-text-subtle);font-size:14px;padding:3px;border-radius:5px;display:flex;}
+.recipe-card .rc-actions button:hover{color:var(--aibios-text);background:var(--aibios-surface-2);}
+.recipe-card .rc-actions button.del:hover{color:#d64545;}
+.recipe-card .rc-steps{font-size:11.5px;font-weight:500;color:var(--aibios-text-muted);margin-top:6px;line-height:1.5;}
+.recipe-card .rc-run{margin-top:9px;font-size:11px;font-weight:800;color:var(--bs-green);display:inline-flex;align-items:center;gap:5px;}
+.recipe-new{margin:0 0 14px;font-family:inherit;font-size:12px;font-weight:800;color:var(--bs-green);background:rgba(0,168,114,.08);border:1px dashed var(--bs-green);border-radius:9px;padding:9px 13px;cursor:pointer;display:flex;align-items:center;gap:7px;width:100%;justify-content:center;transition:background 160ms var(--ease);}
+.recipe-new:hover{background:rgba(0,168,114,.14);}
+.recipe-new i{font-size:15px;}
+/* "Next step" advance affordance shown under an assistant turn during a recipe run */
+.recipe-next{margin-top:9px;display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:9px 12px;background:rgba(0,168,114,.07);border:1px solid var(--aibios-border-soft);border-left:3px solid var(--bs-green);border-radius:8px;font-size:12px;font-weight:600;color:var(--aibios-text-muted);}
+.recipe-next .rn-label{font-weight:700;}
+.recipe-next .rn-label strong{color:var(--bs-green-dim);}
+.recipe-next button{font-family:inherit;font-size:11.5px;font-weight:800;padding:6px 12px;border-radius:6px;cursor:pointer;border:1px solid transparent;transition:background 140ms var(--ease),color 140ms var(--ease),border-color 140ms var(--ease);}
+.recipe-next .rn-go{background:var(--bs-green-core);color:#fff;box-shadow:0 3px 10px var(--bs-green-glow);}
+.recipe-next .rn-go:hover{background:var(--bs-green-dim);}
+.recipe-next .rn-stop{background:transparent;color:var(--aibios-text-subtle);border-color:var(--aibios-border-soft);}
+.recipe-next .rn-stop:hover{color:var(--aibios-text);background:var(--aibios-surface);}
+/* Shared lightweight modal for recipe create/rename (matches BSCE proportions, app-scoped) */
+.rcp-overlay{position:fixed;inset:0;z-index:1100;background:rgba(10,14,26,.45);display:none;align-items:center;justify-content:center;padding:20px;}
+.rcp-overlay.open{display:flex;}
+.rcp-dialog{background:var(--aibios-bg);width:100%;max-width:520px;max-height:calc(100vh - 40px);display:flex;flex-direction:column;border-radius:14px;box-shadow:0 24px 60px rgba(10,14,26,.28);overflow:hidden;}
+.rcp-head{padding:18px 22px 14px;border-bottom:1px solid var(--aibios-border);font-size:16px;font-weight:800;color:var(--aibios-text);display:flex;align-items:center;gap:9px;}
+.rcp-head i{color:var(--bs-green-core);font-size:19px;}
+.rcp-body{padding:18px 22px;overflow-y:auto;display:flex;flex-direction:column;gap:12px;}
+.rcp-field label{display:block;font-size:11px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:var(--aibios-text-subtle);margin-bottom:6px;}
+.rcp-field input,.rcp-step textarea{width:100%;font-family:inherit;font-size:13px;font-weight:500;color:var(--aibios-text);background:var(--aibios-surface);border:1px solid var(--aibios-border-soft);border-radius:8px;padding:9px 12px;outline:none;resize:vertical;}
+.rcp-field input:focus,.rcp-step textarea:focus{border-color:var(--bs-green);box-shadow:0 0 0 3px var(--bs-green-glow);}
+.rcp-steps{display:flex;flex-direction:column;gap:9px;}
+.rcp-step{display:flex;gap:8px;align-items:flex-start;}
+.rcp-step .rcp-step-num{flex:0 0 auto;width:24px;height:24px;border-radius:50%;background:var(--bs-green-core);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;margin-top:7px;}
+.rcp-step textarea{flex:1 1 auto;min-height:46px;}
+.rcp-step .rcp-step-del{flex:0 0 auto;background:transparent;border:none;cursor:pointer;color:var(--aibios-text-subtle);font-size:16px;padding:7px 2px 0;}
+.rcp-step .rcp-step-del:hover{color:#d64545;}
+.rcp-addstep{align-self:flex-start;font-family:inherit;font-size:11.5px;font-weight:800;color:var(--bs-green);background:transparent;border:1px dashed var(--bs-green);border-radius:7px;padding:7px 12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
+.rcp-addstep:hover{background:rgba(0,168,114,.08);}
+.rcp-foot{padding:14px 22px 18px;border-top:1px solid var(--aibios-border);display:flex;gap:10px;justify-content:flex-end;align-items:center;}
+.rcp-foot .rcp-spacer{flex:1 1 auto;}
+.rcp-btn{font-family:inherit;font-weight:700;font-size:14px;padding:10px 18px;border-radius:8px;cursor:pointer;border:1px solid transparent;}
+.rcp-btn-cancel{background:transparent;color:var(--aibios-text-muted);border-color:var(--aibios-border-soft);}
+.rcp-btn-cancel:hover{background:var(--aibios-surface);}
+.rcp-btn-save{background:var(--bs-green-core);color:#fff;box-shadow:0 4px 14px var(--bs-green-glow);}
+.rcp-btn-save:hover{background:var(--bs-green-dim);}
+.rcp-btn-save:disabled{opacity:.55;cursor:default;box-shadow:none;}
+
+/* ==========================================================================
    >>> v1.4: CONFIRM-BEFORE-EXECUTE (write-back Wave 1) — DORMANT/FLAG-GATED.
    Styles are inert until BSCE.open() is called, which only happens on a URL
    carrying ?writeback=1. Scoped under .bsce- so nothing collides with the app.
@@ -552,6 +652,8 @@ a.src-chip:hover{border-color:var(--bs-green);color:var(--bs-green-dim);backgrou
     <!-- >>> v1.2: multi-file + xlsx (#3, #8): `multiple` enabled, .xlsx/.xls accepted -->
     <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.csv,.xlsx,.xls" multiple style="display:none">
     <button class="input-icon-btn" id="clipBtn" title="Attach PDFs, images, CSV, or Excel — several at once"><i class="ti ti-paperclip"></i></button>
+    <!-- >>> v1.7: voice input mic. Hidden by JS unless the Web Speech API is supported. -->
+    <button class="input-icon-btn" id="micBtn" title="Dictate a prompt" style="display:none"><i class="ti ti-microphone"></i></button>
     <button class="send-btn" id="sendBtn">SEND</button>
   </div>
   <div class="input-meta">
@@ -603,6 +705,23 @@ a.src-chip:hover{border-color:var(--bs-green);color:var(--bs-green-dim);backgrou
 <!-- >>> v1.4: Confirm-before-execute dialog (write-back Wave 1). Inert until BSCE.open() is called (only on ?writeback=1). -->
 <div id="bsce-overlay" class="bsce-overlay" role="presentation">
   <div id="bsce-dialog" class="bsce-dialog" role="dialog" aria-modal="true" aria-labelledby="bsce-title" aria-describedby="bsce-sub" tabindex="-1"></div>
+</div>
+
+<!-- >>> v1.7: Recipe create/rename modal (prompt recipes). App-scoped; built/populated by JS. -->
+<div id="rcpOverlay" class="rcp-overlay" role="presentation">
+  <div class="rcp-dialog" role="dialog" aria-modal="true" aria-labelledby="rcpTitle" tabindex="-1">
+    <div class="rcp-head"><i class="ti ti-list-check"></i><span id="rcpTitle">Save a recipe</span></div>
+    <div class="rcp-body">
+      <div class="rcp-field"><label for="rcpName">Recipe name</label><input type="text" id="rcpName" maxlength="60" placeholder="e.g. Client recap from HubSpot activity"></div>
+      <div class="rcp-field"><label>Steps — run one at a time, in order</label><div class="rcp-steps" id="rcpSteps"></div></div>
+      <button type="button" class="rcp-addstep" id="rcpAddStep"><i class="ti ti-plus"></i>Add a step</button>
+    </div>
+    <div class="rcp-foot">
+      <button type="button" class="rcp-btn rcp-btn-cancel" id="rcpCancel">Cancel</button>
+      <div class="rcp-spacer"></div>
+      <button type="button" class="rcp-btn rcp-btn-save" id="rcpSave">Save recipe</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -1203,6 +1322,274 @@ const SUGGESTIONS = {
     return copiedNote;
   }
 
+  // ==========================================================================
+  // >>> v1.7: FILE GENERATION ENGINE — Word / Excel / PDF / PowerPoint / Markdown.
+  // All client-side via CDN libraries (docx, html2pdf.js, PptxGenJS) + the
+  // already-loaded SheetJS (XLSX) for Excel. Read-side only: every path produces
+  // a file downloaded to the user's device. No upload, no server, no relay call,
+  // nothing touches the chat/streaming/write-back paths.
+  //   >>> MARK (SHAREPOINT SAVE): saving a generated file to SharePoint would be a
+  //   *write* (confirm-before-execute + a relay endpoint). Intentionally NOT wired
+  //   here — files download to the device only. Seam left for the relay owner.
+  // ==========================================================================
+  const FILE_FOOTER = "Generated by the BrandStar AI Assistant";
+  function fileStamp(){ return new Date().toISOString().slice(0,10); }
+  function fileBase(){ return "BrandStar-AI-" + fileStamp(); }
+
+  // Trigger a browser download from a Blob.
+  function downloadBlob(blob, filename){
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
+
+  // Brief visual feedback on the clicked menu item.
+  function dlFeedback(srcEl, ok, label){
+    if (!srcEl) return;
+    const orig = srcEl.innerHTML;
+    srcEl.innerHTML = ok
+      ? '<i class="ti ti-check"></i>' + (label || "Downloaded")
+      : '<i class="ti ti-alert-triangle"></i>' + (label || "Couldn’t generate");
+    setTimeout(() => { srcEl.innerHTML = orig; }, 1800);
+  }
+
+  // --- Markdown table detection / parsing -----------------------------------
+  // Find the first GitHub-style Markdown table in the answer and return it as a
+  // 2D array (rows of cells). Returns null if there's no table.
+  function extractMarkdownTable(md){
+    if (!md) return null;
+    const lines = md.split(/\r?\n/);
+    for (let i = 0; i < lines.length - 1; i++){
+      const header = lines[i], sep = lines[i+1];
+      if (header.indexOf("|") < 0) continue;
+      // separator row like |---|:--:|---|
+      if (!/^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/.test(sep)) continue;
+      const rows = [];
+      const toCells = ln => ln.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map(c => c.trim());
+      rows.push(toCells(header));
+      for (let j = i + 2; j < lines.length; j++){
+        if (lines[j].indexOf("|") < 0 || !lines[j].trim()) break;
+        rows.push(toCells(lines[j]));
+      }
+      if (rows.length >= 1) return rows;
+    }
+    return null;
+  }
+
+  // Lightweight inline-markdown stripper for plain-text outputs (Excel cells, etc.)
+  function stripInlineMd(s){
+    return (s || "").replace(/\*\*([^*]+)\*\*/g, "$1").replace(/\*([^*]+)\*/g, "$1")
+      .replace(/`([^`]+)`/g, "$1").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").trim();
+  }
+
+  // --- EXCEL (.xlsx) — reuse the already-loaded SheetJS ----------------------
+  function generateXlsx(text, srcEl){
+    if (typeof XLSX === "undefined"){ dlFeedback(srcEl, false, "Excel unavailable"); return; }
+    const table = extractMarkdownTable(text);
+    let ws, aoa;
+    if (table){
+      aoa = table.map(row => row.map(stripInlineMd));
+    } else {
+      // Graceful fallback: one column of the answer's non-empty lines.
+      const lines = text.split(/\r?\n/).map(l => stripInlineMd(l)).filter(l => l.length);
+      aoa = [["BrandStar AI Assistant — " + fileStamp()]].concat(lines.map(l => [l]));
+    }
+    ws = XLSX.utils.aoa_to_sheet(aoa);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "BrandStar AI");
+    const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    downloadBlob(new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), fileBase() + ".xlsx");
+    dlFeedback(srcEl, true, "Excel ready");
+  }
+
+  // --- WORD (.docx) — docx UMD build ----------------------------------------
+  // Parse the markdown answer into docx paragraphs: headings, bullets, numbered
+  // lists, simple tables, and body text. Falls back to an HTML-to-docx blob if
+  // the docx library didn't load.
+  function generateDocx(text, srcEl){
+    const GREEN = "00A872", DARKGRAY = "333333";
+    if (typeof docx !== "undefined" && docx.Document && docx.Packer){
+      const { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle } = docx;
+      const children = [];
+      // Title
+      children.push(new Paragraph({ children:[ new TextRun({ text:"BrandStar AI Assistant", bold:true, color:GREEN, size:32 }) ], spacing:{ after:80 } }));
+      children.push(new Paragraph({ children:[ new TextRun({ text:fileStamp(), color:"888888", size:18 }) ], spacing:{ after:240 } }));
+
+      const lines = text.split(/\r?\n/);
+      let i = 0;
+      const inlineRuns = (s) => {
+        // bold (**x**) split; everything else dark gray body
+        const runs = []; const parts = (s||"").split(/(\*\*[^*]+\*\*)/g);
+        parts.forEach(p => {
+          if (!p) return;
+          const m = p.match(/^\*\*([^*]+)\*\*$/);
+          if (m) runs.push(new TextRun({ text:m[1], bold:true, color:DARKGRAY, size:22 }));
+          else runs.push(new TextRun({ text:stripInlineMd(p), color:DARKGRAY, size:22 }));
+        });
+        if (!runs.length) runs.push(new TextRun({ text:"", size:22 }));
+        return runs;
+      };
+      while (i < lines.length){
+        const raw = lines[i]; const ln = raw.trim();
+        // table block
+        if (ln.indexOf("|") >= 0 && i+1 < lines.length && /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/.test(lines[i+1])){
+          const tbl = extractMarkdownTable(lines.slice(i).join("\n"));
+          if (tbl){
+            const rows = tbl.map((r, ri) => new TableRow({ children: r.map(c => new TableCell({
+              width:{ size: Math.floor(100 / r.length), type: WidthType.PERCENTAGE },
+              children:[ new Paragraph({ children:[ new TextRun({ text:stripInlineMd(c), bold: ri===0, color: ri===0 ? "FFFFFF" : DARKGRAY, size:20 }) ] }) ],
+              shading: ri===0 ? { fill: GREEN } : undefined
+            })) }));
+            children.push(new Table({ width:{ size:100, type:WidthType.PERCENTAGE }, rows }));
+            children.push(new Paragraph({ text:"", spacing:{ after:120 } }));
+            i += tbl.length + 1; continue;
+          }
+        }
+        if (/^#{1,3}\s/.test(ln)){
+          const level = (ln.match(/^#+/)[0].length);
+          children.push(new Paragraph({ heading: level===1?HeadingLevel.HEADING_1:level===2?HeadingLevel.HEADING_2:HeadingLevel.HEADING_3,
+            children:[ new TextRun({ text:stripInlineMd(ln.replace(/^#+\s/,"")), bold:true, color:GREEN }) ], spacing:{ before:160, after:80 } }));
+        } else if (/^\s*[-*]\s+/.test(raw)){
+          children.push(new Paragraph({ bullet:{ level:0 }, children: inlineRuns(ln.replace(/^[-*]\s+/,"")), spacing:{ after:40 } }));
+        } else if (/^\s*\d+\.\s+/.test(raw)){
+          children.push(new Paragraph({ numbering:{ reference:"v17num", level:0 }, children: inlineRuns(ln.replace(/^\d+\.\s+/,"")), spacing:{ after:40 } }));
+        } else if (!ln){
+          children.push(new Paragraph({ text:"" }));
+        } else {
+          children.push(new Paragraph({ children: inlineRuns(ln), spacing:{ after:80 } }));
+        }
+        i++;
+      }
+      // Footer line
+      children.push(new Paragraph({ children:[ new TextRun({ text:FILE_FOOTER, italics:true, color:"888888", size:16 }) ], spacing:{ before:300 } }));
+
+      const doc = new Document({
+        numbering:{ config:[{ reference:"v17num", levels:[{ level:0, format:"decimal", text:"%1.", alignment: (docx.AlignmentType ? docx.AlignmentType.START : "start") }] }] },
+        sections:[{ properties:{}, children }]
+      });
+      Packer.toBlob(doc).then(blob => {
+        downloadBlob(blob, fileBase() + ".docx");
+        dlFeedback(srcEl, true, "Word ready");
+      }).catch(() => generateDocxHtmlFallback(text, srcEl));
+      return;
+    }
+    generateDocxHtmlFallback(text, srcEl);
+  }
+  // HTML-to-docx fallback: a Word-openable .doc(x) HTML blob with mso headers.
+  function generateDocxHtmlFallback(text, srcEl){
+    const inner = window.marked ? marked.parse(text) : ("<pre>" + (text||"").replace(/[&<>]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])) + "</pre>");
+    const html =
+      '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">' +
+      '<head><meta charset="utf-8"><title>BrandStar AI</title>' +
+      '<style>body{font-family:Calibri,Arial,sans-serif;color:#333;font-size:11pt;line-height:1.5;}' +
+      'h1,h2,h3{color:#00A872;} table{border-collapse:collapse;} td,th{border:1px solid #ccc;padding:5px 8px;} ' +
+      'th{background:#00A872;color:#fff;} .ft{color:#888;font-style:italic;font-size:9pt;margin-top:24pt;}</style></head>' +
+      '<body><h1 style="color:#00A872;">BrandStar AI Assistant</h1><p style="color:#888;">' + fileStamp() + '</p>' +
+      inner + '<p class="ft">' + FILE_FOOTER + '</p></body></html>';
+    downloadBlob(new Blob(["\ufeff", html], { type:"application/msword" }), fileBase() + ".doc");
+    dlFeedback(srcEl, true, "Word ready");
+  }
+
+  // --- PDF (.pdf) — html2pdf.js (html2canvas + jsPDF) ------------------------
+  function generatePdf(text, srcEl){
+    if (typeof html2pdf === "undefined"){ dlFeedback(srcEl, false, "PDF unavailable"); return; }
+    const inner = window.marked ? marked.parse(text) : (text||"");
+    const holder = document.createElement("div");
+    holder.style.cssText = "padding:40px;background:#fff;color:#333;font-family:Montserrat,Arial,sans-serif;font-size:14px;line-height:1.7;width:720px;";
+    holder.innerHTML =
+      '<div style="border-bottom:3px solid #00A872;padding-bottom:10px;margin-bottom:20px;">' +
+        '<div style="font-size:22px;font-weight:800;color:#0A0E1A;">BrandStar AI Assistant</div>' +
+        '<div style="font-size:12px;color:#888;margin-top:3px;">' + fileStamp() + '</div></div>' +
+      '<div class="pdf-body">' + inner + '</div>' +
+      '<div style="margin-top:28px;border-top:1px solid #e3e3e3;padding-top:10px;font-size:11px;color:#888;font-style:italic;">' + FILE_FOOTER + '</div>';
+    // Brand table styling inside the rendered HTML
+    holder.querySelectorAll("table").forEach(t => { t.style.cssText="border-collapse:collapse;width:100%;margin:10px 0;font-size:13px;"; });
+    holder.querySelectorAll("th,td").forEach(c => { c.style.cssText="border:1px solid #ccc;padding:6px 9px;text-align:left;"; });
+    holder.querySelectorAll("th").forEach(c => { c.style.background="#00A872"; c.style.color="#fff"; });
+    holder.querySelectorAll("h1,h2,h3").forEach(h => { h.style.color="#00A872"; });
+    html2pdf().set({
+      margin: 10, filename: fileBase() + ".pdf",
+      image: { type:"jpeg", quality:0.96 },
+      html2canvas: { scale:2, useCORS:true, backgroundColor:"#ffffff" },
+      jsPDF: { unit:"mm", format:"a4", orientation:"portrait" },
+      pagebreak: { mode:["avoid-all","css","legacy"] }
+    }).from(holder).save()
+      .then(() => dlFeedback(srcEl, true, "PDF ready"))
+      .catch(() => dlFeedback(srcEl, false, "PDF failed"));
+  }
+
+  // --- POWERPOINT (.pptx) — PptxGenJS ----------------------------------------
+  // Title slide + content slides split on the answer's headings (## / #). If no
+  // headings, one content slide with the body text.
+  function generatePptx(text, srcEl){
+    if (typeof PptxGenJS === "undefined"){ dlFeedback(srcEl, false, "PowerPoint unavailable"); return; }
+    try {
+      const pptx = new PptxGenJS();
+      pptx.defineLayout({ name:"BS16x9", width:13.33, height:7.5 });
+      pptx.layout = "BS16x9";
+      const GREEN = "00A872", DARK = "0A0E1A", BODY = "333333";
+
+      // Title slide
+      const t = pptx.addSlide();
+      t.background = { color:"FFFFFF" };
+      t.addShape(pptx.ShapeType.rect, { x:0, y:6.9, w:13.33, h:0.6, fill:{ color:GREEN } });
+      t.addText("BrandStar AI Assistant", { x:0.7, y:2.6, w:12, h:1.2, fontFace:"Montserrat", fontSize:40, bold:true, color:DARK });
+      t.addText(fileStamp(), { x:0.7, y:3.8, w:12, h:0.5, fontFace:"Montserrat", fontSize:16, color:"888888" });
+
+      // Split into sections on headings
+      const lines = text.split(/\r?\n/);
+      const sections = []; let cur = { title:null, body:[] };
+      lines.forEach(raw => {
+        const ln = raw.trim();
+        const h = ln.match(/^#{1,3}\s+(.*)$/);
+        if (h){
+          if (cur.title || cur.body.length) sections.push(cur);
+          cur = { title: stripInlineMd(h[1]), body:[] };
+        } else if (ln){
+          cur.body.push(stripInlineMd(ln.replace(/^[-*]\s+/,"• ").replace(/^\d+\.\s+/, m=>m)));
+        }
+      });
+      if (cur.title || cur.body.length) sections.push(cur);
+      if (!sections.length) sections.push({ title:"Summary", body: text.split(/\r?\n/).map(l=>stripInlineMd(l)).filter(Boolean) });
+
+      sections.forEach(sec => {
+        const s = pptx.addSlide();
+        s.background = { color:"FFFFFF" };
+        s.addShape(pptx.ShapeType.rect, { x:0, y:0, w:13.33, h:0.18, fill:{ color:GREEN } });
+        s.addText(sec.title || "BrandStar AI", { x:0.6, y:0.45, w:12.1, h:0.9, fontFace:"Montserrat", fontSize:26, bold:true, color:GREEN });
+        const bodyText = (sec.body.length ? sec.body : ["(no detail)"]).join("\n");
+        s.addText(bodyText, { x:0.6, y:1.6, w:12.1, h:5.3, fontFace:"Montserrat", fontSize:15, color:BODY, valign:"top", lineSpacingMultiple:1.15 });
+        s.addText(FILE_FOOTER, { x:0.6, y:7.05, w:12.1, h:0.3, fontFace:"Montserrat", fontSize:9, italic:true, color:"888888" });
+      });
+
+      pptx.writeFile({ fileName: fileBase() + ".pptx" })
+        .then(() => dlFeedback(srcEl, true, "PowerPoint ready"))
+        .catch(() => dlFeedback(srcEl, false, "PPTX failed"));
+    } catch(e){ dlFeedback(srcEl, false, "PPTX failed"); }
+  }
+
+  // Router for the Download-as menu.
+  function generateFile(kind, text, srcEl){
+    try {
+      if (kind === "md"){ exportResponse(text); dlFeedback(srcEl, true, "Markdown ready"); return; }
+      if (kind === "xlsx"){ generateXlsx(text, srcEl); return; }
+      if (kind === "docx"){ generateDocx(text, srcEl); return; }
+      if (kind === "pdf"){ generatePdf(text, srcEl); return; }
+      if (kind === "pptx"){ generatePptx(text, srcEl); return; }
+    } catch(e){ console.warn("[v1.7] file generation failed:", e); dlFeedback(srcEl, false, "Couldn’t generate"); }
+  }
+
+  // Close any open Download-as popover on outside click / Escape.
+  document.addEventListener("click", e => {
+    if (!e.target.closest(".dl-wrap")) document.querySelectorAll(".dl-wrap.open").forEach(w => w.classList.remove("open"));
+  });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") document.querySelectorAll(".dl-wrap.open").forEach(w => w.classList.remove("open"));
+  });
+
+
   function currentDisplayName(){
     if (userProfile.name) return userProfile.name;
     if (msAccount && (msAccount.name || msAccount.username)) {
@@ -1483,12 +1870,178 @@ const SUGGESTIONS = {
     return card;
   }
 
+
+  // ==========================================================================
+  // >>> v1.7: PROMPT RECIPES — named, ordered prompt chains saved per-user in
+  // localStorage (mirrors the v1.6 favorites pattern exactly). A recipe is
+  // { name, steps:[string,...] }. Steps load into the input ONE AT A TIME; the
+  // user reviews and sends each. After an assistant turn during a run, a small
+  // "Next step →" affordance advances to the next step. Pure frontend; no relay.
+  // ==========================================================================
+  const RECIPE_KEY_BASE = "bsaiwidget_recipes_v1_";
+  function recipeKey(){ return RECIPE_KEY_BASE + (typeof whoKey === "function" ? whoKey() : "anon"); }
+  function getRecipes(){ try { const a = JSON.parse(localStorage.getItem(recipeKey()) || "[]"); return Array.isArray(a) ? a : []; } catch(e){ return []; } }
+  function setRecipes(arr){ try { localStorage.setItem(recipeKey(), JSON.stringify(arr)); } catch(e){} }
+
+  // Active run state: which recipe and which step index we're on.
+  let activeRecipe = null, activeStepIdx = -1;
+
+  // Render the Recipes group (new-recipe button + saved recipe cards) at the
+  // top of the library list.
+  function renderRecipesGroup(){
+    if (!libList) return;
+    const lbl = document.createElement("div");
+    lbl.className = "lib-group-label recipe";
+    lbl.innerHTML = '<i class="ti ti-list-check"></i>Recipes';
+    libList.appendChild(lbl);
+
+    const newBtn = document.createElement("button");
+    newBtn.type = "button"; newBtn.className = "recipe-new";
+    newBtn.innerHTML = '<i class="ti ti-plus"></i>New recipe';
+    newBtn.addEventListener("click", () => openRecipeModal(null));
+    libList.appendChild(newBtn);
+
+    const recipes = getRecipes();
+    recipes.forEach((rec, ri) => {
+      const card = document.createElement("div");
+      card.className = "recipe-card";
+      const preview = (rec.steps || []).map((s,i) => (i+1) + ". " + s).join("  ");
+      card.innerHTML =
+        '<div class="rc-top"><span class="rc-title"></span>' +
+          '<span class="rc-count">' + (rec.steps ? rec.steps.length : 0) + ' step' + ((rec.steps && rec.steps.length===1) ? '' : 's') + '</span>' +
+          '<span class="rc-actions">' +
+            '<button type="button" class="ren" title="Rename / edit"><i class="ti ti-pencil"></i></button>' +
+            '<button type="button" class="del" title="Delete"><i class="ti ti-trash"></i></button>' +
+          '</span>' +
+        '</div>' +
+        '<div class="rc-steps"></div>' +
+        '<div class="rc-run"><i class="ti ti-player-play"></i>Run recipe</div>';
+      card.querySelector(".rc-title").textContent = rec.name || "Untitled recipe";
+      card.querySelector(".rc-steps").textContent = preview;
+      card.querySelector(".ren").addEventListener("click", ev => { ev.stopPropagation(); openRecipeModal(ri); });
+      card.querySelector(".del").addEventListener("click", ev => {
+        ev.stopPropagation();
+        if (confirm('Delete the recipe "' + (rec.name||"Untitled") + '"? This can\'t be undone.')){
+          const arr = getRecipes(); arr.splice(ri,1); setRecipes(arr); renderLibrary();
+        }
+      });
+      card.addEventListener("click", () => runRecipe(ri));
+      libList.appendChild(card);
+    });
+  }
+
+  // Start a recipe: drop step 1 into the input, close the panel, arm the run.
+  function runRecipe(ri){
+    const rec = getRecipes()[ri];
+    if (!rec || !rec.steps || !rec.steps.length) return;
+    activeRecipe = rec; activeStepIdx = 0;
+    input.value = rec.steps[0];
+    closeLibrary();
+    input.focus();
+  }
+
+  // Called after each assistant turn completes. If a recipe run is active and
+  // there are more steps, show a "Next step →" affordance under the answer.
+  function maybeShowRecipeNext(bub){
+    if (!activeRecipe || !bub) return;
+    const next = activeStepIdx + 1;
+    const total = activeRecipe.steps.length;
+    const wrap = document.createElement("div");
+    wrap.className = "recipe-next";
+    if (next < total){
+      wrap.innerHTML =
+        '<span class="rn-label">Recipe <strong>' + escRecipe(activeRecipe.name) + '</strong> · step ' + (next+1) + ' of ' + total + '</span>' +
+        '<button type="button" class="rn-go"><i class="ti ti-arrow-right"></i>Next step</button>' +
+        '<button type="button" class="rn-stop">Stop</button>';
+      wrap.querySelector(".rn-go").addEventListener("click", () => {
+        activeStepIdx = next;
+        input.value = activeRecipe.steps[next];
+        input.focus();
+        wrap.remove();
+      });
+      wrap.querySelector(".rn-stop").addEventListener("click", () => { activeRecipe = null; activeStepIdx = -1; wrap.remove(); });
+    } else {
+      wrap.innerHTML = '<span class="rn-label">Recipe <strong>' + escRecipe(activeRecipe.name) + '</strong> complete — all ' + total + ' steps run.</span>' +
+        '<button type="button" class="rn-stop">Done</button>';
+      wrap.querySelector(".rn-stop").addEventListener("click", () => wrap.remove());
+      activeRecipe = null; activeStepIdx = -1;
+    }
+    bub.appendChild(wrap);
+    thread.scrollTop = thread.scrollHeight;
+  }
+  function escRecipe(s){ return String(s||"").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+  // --- Recipe create / rename modal -----------------------------------------
+  const rcpOverlay = document.getElementById("rcpOverlay");
+  const rcpStepsEl = document.getElementById("rcpSteps");
+  const rcpNameEl  = document.getElementById("rcpName");
+  let rcpEditIndex = null;
+
+  function addStepRow(value){
+    const row = document.createElement("div");
+    row.className = "rcp-step";
+    row.innerHTML = '<span class="rcp-step-num"></span><textarea rows="2" placeholder="Type a prompt for this step..."></textarea><button type="button" class="rcp-step-del" title="Remove step"><i class="ti ti-x"></i></button>';
+    row.querySelector("textarea").value = value || "";
+    row.querySelector(".rcp-step-del").addEventListener("click", () => { row.remove(); renumberSteps(); });
+    rcpStepsEl.appendChild(row);
+    renumberSteps();
+  }
+  function renumberSteps(){
+    Array.from(rcpStepsEl.querySelectorAll(".rcp-step")).forEach((r,i) => { r.querySelector(".rcp-step-num").textContent = (i+1); });
+  }
+  function openRecipeModal(editIndex){
+    rcpEditIndex = (typeof editIndex === "number") ? editIndex : null;
+    rcpStepsEl.innerHTML = "";
+    if (rcpEditIndex !== null){
+      const rec = getRecipes()[rcpEditIndex] || { name:"", steps:[] };
+      document.getElementById("rcpTitle").textContent = "Edit recipe";
+      rcpNameEl.value = rec.name || "";
+      (rec.steps && rec.steps.length ? rec.steps : [""]).forEach(s => addStepRow(s));
+    } else {
+      document.getElementById("rcpTitle").textContent = "Save a recipe";
+      rcpNameEl.value = "";
+      // Seed step 1 from the current input if there's something there.
+      addStepRow(input && input.value ? input.value.trim() : "");
+      if (!input || !input.value) addStepRow("");
+    }
+    rcpOverlay.classList.add("open");
+    setTimeout(() => rcpNameEl.focus(), 60);
+  }
+  function closeRecipeModal(){ rcpOverlay.classList.remove("open"); rcpEditIndex = null; }
+  function saveRecipeFromModal(){
+    const name = (rcpNameEl.value || "").trim();
+    const steps = Array.from(rcpStepsEl.querySelectorAll("textarea")).map(t => t.value.trim()).filter(Boolean);
+    if (!name || !steps.length){ alert("Give the recipe a name and at least one step."); return; }
+    const arr = getRecipes();
+    const rec = { name, steps };
+    if (rcpEditIndex !== null && arr[rcpEditIndex]) arr[rcpEditIndex] = rec;
+    else arr.unshift(rec);
+    setRecipes(arr);
+    closeRecipeModal();
+    renderLibrary();
+  }
+  (function(){
+    const add = document.getElementById("rcpAddStep");   if (add) add.addEventListener("click", () => addStepRow(""));
+    const sv  = document.getElementById("rcpSave");       if (sv) sv.addEventListener("click", saveRecipeFromModal);
+    const cn  = document.getElementById("rcpCancel");     if (cn) cn.addEventListener("click", closeRecipeModal);
+    if (rcpOverlay) rcpOverlay.addEventListener("click", e => { if (e.target === rcpOverlay) closeRecipeModal(); });
+    document.addEventListener("keydown", e => { if (e.key === "Escape" && rcpOverlay && rcpOverlay.classList.contains("open")) closeRecipeModal(); });
+  })();
+
+
   function renderLibrary(){
     if (!libList) return;
     const items = rankedLibrary();
     libList.innerHTML = "";
+    // >>> v1.7: Recipes group — saved multi-step prompt chains, shown above the
+    // prompt tiers. Independent of mode/role/search filters (user-authored, not
+    // library prompts). Always offers a "New recipe" affordance.
+    renderRecipesGroup();
     if (!items.length){
-      libList.innerHTML = '<div class="lib-empty">No prompts match that search.<br>Try a different word, or clear the filter.</div>';
+      const em = document.createElement("div");
+      em.className = "lib-empty";
+      em.innerHTML = 'No prompts match that search.<br>Try a different word, or clear the filter.';
+      libList.appendChild(em);
       return;
     }
     // >>> v1.6: pinned Favorites group — favorites that survive the current
@@ -1612,6 +2165,55 @@ const SUGGESTIONS = {
 
   input.addEventListener("keydown", e => { if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); send(); }});
   sendBtn.addEventListener("click", send);
+
+  // ==========================================================================
+  // >>> v1.7: VOICE INPUT — Web Speech API dictation into the #input field.
+  // No library, no extra network call beyond what the browser does natively.
+  // The mic button is hidden entirely when the API is unsupported (capability
+  // check below). Never auto-sends — transcribed text lands in #input for the
+  // user to review and send, consistent with the widget's review-before-act posture.
+  // ==========================================================================
+  (function(){
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const micBtn = document.getElementById("micBtn");
+    if (!micBtn) return;
+    if (!SR){ micBtn.style.display = "none"; return; } // unsupported -> hide, no error
+    micBtn.style.display = "";
+    let rec = null, listening = false, baseText = "";
+    function stop(){
+      listening = false;
+      micBtn.classList.remove("mic-on");
+      micBtn.title = "Dictate a prompt";
+      micBtn.innerHTML = '<i class="ti ti-microphone"></i>';
+      if (rec){ try { rec.stop(); } catch(e){} }
+    }
+    function start(){
+      try {
+        rec = new SR();
+        rec.lang = "en-US"; rec.continuous = true; rec.interimResults = true;
+        baseText = input.value ? (input.value.replace(/\s+$/,"") + " ") : ""; // append, don't clobber
+        rec.onresult = (ev) => {
+          let interim = "", finalText = "";
+          for (let k = ev.resultIndex; k < ev.results.length; k++){
+            const r = ev.results[k];
+            if (r.isFinal) finalText += r[0].transcript;
+            else interim += r[0].transcript;
+          }
+          if (finalText) baseText = (baseText.replace(/\s+$/,"") + " " + finalText.trim() + " ").replace(/^\s+/,"");
+          input.value = (baseText + interim).replace(/\s+/g," ").replace(/^\s+/,"");
+        };
+        rec.onerror = () => stop();
+        rec.onend = () => { if (listening) stop(); };
+        rec.start();
+        listening = true;
+        micBtn.classList.add("mic-on");
+        micBtn.title = "Stop dictating";
+        micBtn.innerHTML = '<i class="ti ti-microphone-2"></i>';
+        input.focus();
+      } catch(e){ stop(); }
+    }
+    micBtn.addEventListener("click", () => { listening ? stop() : start(); });
+  })();
 
   // ==========================================================================
   // >>> v1.2: FILE ATTACHMENTS — multi-file (#8) + client-side XLSX (#3)
@@ -1746,16 +2348,41 @@ const SUGGESTIONS = {
     acts.innerHTML =
       previewBtn +
       '<button class="action-btn" data-a="copy"><i class="ti ti-copy"></i>Copy</button>'+
-      '<button class="action-btn" data-a="export"><i class="ti ti-download"></i>Download</button>'+
+      // >>> v1.7: "Download as…" popover replaces the single .md Download button.
+      // .md is retained as one option inside the menu so nothing is lost.
+      '<span class="dl-wrap">'+
+        '<button class="action-btn" data-a="dl-toggle"><i class="ti ti-download"></i>Download as…</button>'+
+        '<span class="dl-menu" role="menu">'+
+          '<button type="button" class="dl-item" data-dl="docx"><i class="ti ti-file-type-docx"></i>Word<span class="dl-hint">.docx</span></button>'+
+          '<button type="button" class="dl-item" data-dl="xlsx"><i class="ti ti-file-type-xls"></i>Excel<span class="dl-hint">.xlsx</span></button>'+
+          '<button type="button" class="dl-item" data-dl="pdf"><i class="ti ti-file-type-pdf"></i>PDF<span class="dl-hint">.pdf</span></button>'+
+          '<button type="button" class="dl-item" data-dl="pptx"><i class="ti ti-file-type-ppt"></i>PowerPoint<span class="dl-hint">.pptx</span></button>'+
+          '<button type="button" class="dl-item" data-dl="md"><i class="ti ti-markdown"></i>Markdown<span class="dl-hint">.md</span></button>'+
+        '</span>'+
+      '</span>'+
       '<button class="action-btn" data-a="email"><i class="ti ti-mail"></i>Email to me</button>'+
       '<button class="action-btn" data-a="regen"><i class="ti ti-refresh"></i>Regenerate</button>'+
       '<button class="action-btn action-btn-opus" data-a="opus"><i class="ti ti-sparkles"></i>Use Opus 4.8 for deeper analysis</button>';
     acts.addEventListener("click", ev => {
+      // >>> v1.7: Download-as menu item click (handled before the generic action-btn path).
+      const dlItem = ev.target.closest(".dl-item");
+      if (dlItem){
+        ev.stopPropagation();
+        const wrap = acts.querySelector(".dl-wrap"); if (wrap) wrap.classList.remove("open");
+        generateFile(dlItem.dataset.dl, text, dlItem);
+        return;
+      }
       const btn = ev.target.closest(".action-btn"); if(!btn) return;
       const a = btn.dataset.a;
       if(a==="preview"){ openPreview(text, "Document preview"); }
       if(a==="copy"){ navigator.clipboard.writeText(text); btn.innerHTML='<i class="ti ti-check"></i>Copied'; }
-      if(a==="export"){ exportResponse(text); btn.innerHTML='<i class="ti ti-check"></i>Downloaded'; setTimeout(()=>{ btn.innerHTML='<i class="ti ti-download"></i>Download'; }, 1500); }
+      if(a==="dl-toggle"){ // >>> v1.7: toggle the Download-as popover
+        ev.stopPropagation();
+        const wrap = acts.querySelector(".dl-wrap");
+        const wasOpen = wrap.classList.contains("open");
+        document.querySelectorAll(".dl-wrap.open").forEach(w => w.classList.remove("open"));
+        if (!wasOpen) wrap.classList.add("open");
+      }
       if(a==="email"){ const copied = emailResponse(text); btn.innerHTML = copied ? '<i class="ti ti-check"></i>Copied + opening' : '<i class="ti ti-check"></i>Opening mail'; setTimeout(()=>{ btn.innerHTML='<i class="ti ti-mail"></i>Email to me'; }, 1800); }
       if(a==="regen"){ reshape("Regenerate your previous response — same intent, fresh take. Keep the format."); }
       if(a==="opus"){ useOpus=true; modelStatus.textContent="Opus 4.8"; btn.innerHTML='<i class="ti ti-sparkles"></i>Opus 4.8 on'; }
@@ -2054,6 +2681,7 @@ const SUGGESTIONS = {
         const finalText = acc || "(No response)";
         finalizeAssistantBubble(bub, finalText);
         renderSourcesStrip(bub, pendingSources); // >>> v1.6: dormant-safe — no-op unless the relay sent sources
+        maybeShowRecipeNext(bub); // >>> v1.7: if a recipe run is active, offer the next step
         transcript.push({ role: "assistant", text: finalText });
         history.push({ role: "assistant", content: finalText });
         saveConversation();
@@ -2067,6 +2695,8 @@ const SUGGESTIONS = {
         // >>> v1.6: dormant-safe source citations on the JSON fallback path —
         // attach to the assistant bubble just rendered. No-op if data.sources absent.
         if (data.sources){ const bubs = thread.querySelectorAll(".message.assistant .bubble"); const lastBub = bubs[bubs.length - 1]; renderSourcesStrip(lastBub, data.sources); }
+        // >>> v1.7: if a recipe run is active, offer the next step under the answer.
+        { const jbubs = thread.querySelectorAll(".message.assistant .bubble"); maybeShowRecipeNext(jbubs[jbubs.length - 1]); }
         history.push({ role:"assistant", content: data.reply });
         if (data.usage) renderUsage(data.usage); // >>> v1.2: usage meter (#9), optional relay field
         // >>> v1.4: if write-back is enabled and the relay proposes an action, open the confirm dialog.
