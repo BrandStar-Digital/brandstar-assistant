@@ -6,17 +6,18 @@
 <title>BrandStar AI Assistant</title>
 <!--
   ============================================================================
-  BrandStar AI Assistant — CLOUDFLARE BUILD (safe to share)
+  BrandStar AI Assistant — AZURE RELAY BUILD (safe to share)
   ============================================================================
-  This file contains NO API key. It calls your Cloudflare Worker, which holds
-  the key as a secret. Safe to host on Webflow, GitHub Pages, or share directly.
+  This file contains NO API key. It calls the Azure Function relay
+  (bs-widget-relay.azurewebsites.net), which holds the key as a secret in Azure
+  Key Vault. Safe to host on GitHub Pages, Webflow, or share directly.
 
   BEFORE USING:
-    1. Deploy the Worker (brandstar-assistant-worker.js) per the guide.
-    2. Paste your Worker URL into WORKER_URL below.
-    3. Paste the same SHARED_PASSWORD you set in the Worker into SHARED_PASSWORD below.
-       (This is a light gate for a few testers — not high security. Don't reuse
-        a sensitive password here.)
+    1. The Azure Function relay is deployed and owned by Mark (infrastructure).
+    2. WORKER_URL below points at the relay's chat endpoint.
+    3. SHARED_PASSWORD below must match the value set in the relay.
+       (This is a light transition gate — not high security. The durable fix is
+        the relay-side MSAL token validation. Don't reuse a sensitive password.)
 
   FILE SUPPORT:
     - PDF and images: sent to Claude as native document/image blocks.
@@ -2508,7 +2509,7 @@ const SUGGESTIONS = {
   }
 
   // ==========================================================================
-  // CLOUDFLARE / RELAY CONFIG  [UNCHANGED]
+  // AZURE RELAY CONFIG  [UNCHANGED]
   // ==========================================================================
   const WORKER_URL = "https://bs-widget-relay.azurewebsites.net/api/widget-chat";
   const SHARED_PASSWORD = "BrandStar2026 go time";
