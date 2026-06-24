@@ -46,6 +46,26 @@ v1.6 — PROMPT LIBRARY EXPANSION (frontend-only; data + comment changes)
     connector the relay lacks. Pure data — no relay/Azure dependency, no change
     to the chat, write-back, or streaming paths.
   ============================================================================
+  v1.6 — READ-SIDE UX ADDITIONS (frontend-only; ships to the plain URL, no flag)
+    Four additive, write-path-untouched enhancements on top of v1.5. Search
+    "// >>> v1.6:" to find each addition.
+      1. Prompt favorites — star/unstar any library prompt; starred prompts
+         surface in a "Favorites" group pinned ABOVE all tiers AND show a filled
+         star inline on the card in their normal group. Persists per-user in
+         localStorage (key namespaced by whoKey()). Pure frontend.
+      2. Conversation full-text search — a search box in the History panel filters
+         the saved-conversation list by TITLE and message CONTENT (client-side
+         over localStorage). No relay dependency.
+      3. Source citation surfacing — DORMANT-SAFE renderer. Renders a "Sources"
+         strip under an assistant answer ONLY when the relay sends a `sources`
+         array (SSE 'sources' frame on the streaming path, or data.sources on the
+         JSON path). Current relay sends neither, so nothing renders and nothing
+         breaks. Contract for Mark is in "// >>> MARK (SOURCES):" below.
+      4. Copy on user messages — adds a single Copy button to user bubbles (the
+         one action-bar gap). Assistant action row is UNCHANGED.
+    None of these touch the chat, write-back, or streaming write paths. The
+    v1.4/v1.5 confirm UX (BSCE) and the ?writeback=1 gate are untouched.
+  ============================================================================
   v1.5 — WRITE-BACK WAVE 1 ACTIVATED (flag-gated; plain URL unchanged)
     Lights up the dormant v1.4 confirm UX against Mark's live relay write
     endpoints. Five surgical changes, all gated behind ?writeback=1:
@@ -82,6 +102,9 @@ v1.6 — PROMPT LIBRARY EXPANSION (frontend-only; data + comment changes)
     6. WRITE     — V1.4 Wave 1: relay returns an `action` object to confirm, and
                    exposes a write endpoint the confirm dialog calls on approve.
                    See "// >>> MARK (WRITE):" near the bottom for the contract.
+    7. SOURCES   — V1.6: when the answer draws on connector data, emit a `sources`
+                   array so the frontend renders a Sources strip. See
+                   "// >>> MARK (SOURCES):" below for the one-line contract.
   Frontend NEVER holds the API key or connector tokens. Secrets live in Azure
   Key Vault and are used only by the Azure Function.
   ============================================================================
@@ -382,6 +405,36 @@ body {
 .lib-empty{padding:36px 18px;text-align:center;color:var(--aibios-text-subtle);font-size:13px;font-weight:600;line-height:1.6;}
 
 /* ==========================================================================
+   >>> v1.6: READ-SIDE UX ADDITIONS — styles for favorites, history search,
+   source citation strip, and the user-message copy action. Additive only.
+   ========================================================================== */
+/* Favorites — inline star on each prompt card + pinned Favorites group */
+.lib-card .lc-top{position:relative;}
+.lc-star{flex:0 0 auto;background:transparent;border:none;cursor:pointer;color:var(--aibios-text-subtle);font-size:17px;line-height:1;padding:0 0 0 8px;display:inline-flex;align-items:center;transition:color 140ms var(--ease),transform 140ms var(--ease);}
+.lc-star:hover{color:var(--bs-yellow);transform:scale(1.12);}
+.lc-star.on{color:var(--bs-yellow);}
+.lc-star:focus-visible{outline:none;box-shadow:0 0 0 3px var(--bs-green-glow);border-radius:5px;}
+.lib-group-label.fav{color:var(--bs-yellow);display:flex;align-items:center;gap:6px;}
+.lib-group-label.fav i{font-size:13px;}
+/* History full-text search box */
+.history-search{padding:10px 16px 12px;border-bottom:1px solid var(--aibios-border);flex-shrink:0;}
+.history-search input{width:100%;font-family:inherit;font-size:12.5px;font-weight:500;color:var(--aibios-text);background:var(--aibios-surface);border:1px solid var(--aibios-border-soft);border-radius:8px;padding:8px 11px;outline:none;}
+.history-search input:focus{border-color:var(--bs-green);box-shadow:0 0 0 3px var(--bs-green-glow);}
+/* Source citation strip (dormant — only present when relay sends sources) */
+.src-strip{margin-top:13px;padding-top:11px;border-top:1px dashed var(--aibios-border-soft);}
+.src-label{font-size:10.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:var(--aibios-text-subtle);display:flex;align-items:center;gap:5px;margin-bottom:7px;}
+.src-label i{font-size:13px;color:var(--bs-green);}
+.src-items{display:flex;flex-wrap:wrap;gap:6px;}
+.src-chip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--aibios-text-muted);background:var(--aibios-surface);border:1px solid var(--aibios-border-soft);border-radius:7px;padding:5px 10px;text-decoration:none;transition:border-color 160ms var(--ease),background 160ms var(--ease),color 160ms var(--ease);}
+a.src-chip:hover{border-color:var(--bs-green);color:var(--bs-green-dim);background:rgba(0,168,114,.06);}
+.src-chip i{font-size:13px;color:var(--bs-green);}
+.src-chip .src-name{max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.src-chip .src-sys{font-size:10px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:var(--aibios-text-subtle);}
+.src-chip-static{cursor:default;}
+/* Copy action on user messages — right-justified to match the right-aligned user bubble */
+.message-actions.user-actions{justify-content:flex-end;}
+
+/* ==========================================================================
    >>> v1.4: CONFIRM-BEFORE-EXECUTE (write-back Wave 1) — DORMANT/FLAG-GATED.
    Styles are inert until BSCE.open() is called, which only happens on a URL
    carrying ?writeback=1. Scoped under .bsce- so nothing collides with the app.
@@ -527,6 +580,8 @@ body {
       <button class="preview-close" id="historyClose" title="Close">&times;</button>
     </div>
     <div class="history-sub">On this device · stored locally, not on the server</div>
+    <!-- >>> v1.6: full-text conversation search (titles + message content) -->
+    <div class="history-search"><input type="text" id="historySearch" placeholder="Search your conversations — titles and message text..."></div>
     <div class="history-list" id="historyList"></div>
   </div>
 </div>
@@ -1194,12 +1249,45 @@ const SUGGESTIONS = {
     if (d < 604800) return Math.floor(d/86400) + "d ago";
     return new Date(ts).toLocaleDateString([], {month:"short", day:"numeric"});
   }
+  // >>> v1.6: CONVERSATION FULL-TEXT SEARCH — filters saved conversations by
+  // title AND message content, client-side over localStorage. convMatches reads
+  // each conversation's stored transcript and tests the search term against the
+  // concatenated message text; title is matched separately in the panel.
+  let convSearchTerm = "";
+  function convMatches(id, term){
+    if (!term) return true;
+    const raw = lsGet(kConv(id)); if (!raw) return false;
+    let data; try { data = JSON.parse(raw); } catch(e){ return false; }
+    if (!data || !Array.isArray(data.transcript)) return false;
+    const hay = data.transcript.map(t => (t.text || "")).join(" ").toLowerCase();
+    return hay.indexOf(term) >= 0;
+  }
+
   function renderHistoryPanel(){
     if (!historyList) return;
-    const idx = getIndex();
+    let idx = getIndex();
+    // >>> v1.6: apply the search filter — match on title OR message content.
+    const term = (convSearchTerm || "").trim().toLowerCase();
+    const hadAny = idx.length;
+    if (term){
+      idx = idx.filter(entry =>
+        ((entry.title || "").toLowerCase().indexOf(term) >= 0) ||
+        ((entry.preview || "").toLowerCase().indexOf(term) >= 0) ||
+        convMatches(entry.id, term));
+    }
     historyList.innerHTML = "";
     if (!idx.length){
-      historyList.innerHTML = '<div class="history-empty">No saved conversations yet.<br>Your chats will appear here automatically.</div>';
+      if (hadAny && term){
+        // >>> v1.6: build the "no match" state with textContent so the search
+        // term is never injected as HTML (no esc() dependency in this block).
+        const em = document.createElement("div"); em.className = "history-empty";
+        em.appendChild(document.createTextNode("No conversations match \u201c" + term + "\u201d."));
+        em.appendChild(document.createElement("br"));
+        em.appendChild(document.createTextNode("Try a different word, or clear the search."));
+        historyList.appendChild(em);
+      } else {
+        historyList.innerHTML = '<div class="history-empty">No saved conversations yet.<br>Your chats will appear here automatically.</div>';
+      }
       return;
     }
     idx.forEach(entry => {
@@ -1256,6 +1344,9 @@ const SUGGESTIONS = {
     if (hc) hc.addEventListener("click", closeHistoryPanel);
     if (historyOverlay) historyOverlay.addEventListener("click", e => { if (e.target === historyOverlay) closeHistoryPanel(); });
     document.addEventListener("keydown", e => { if (e.key === "Escape") closeHistoryPanel(); });
+    // >>> v1.6: live full-text search wiring
+    const hs = document.getElementById("historySearch");
+    if (hs) hs.addEventListener("input", e => { convSearchTerm = e.target.value; renderHistoryPanel(); });
   })();
 
   // ==========================================================================
@@ -1353,6 +1444,45 @@ const SUGGESTIONS = {
     return items.sort((a,b) => tier(a) - tier(b));
   }
 
+  // >>> v1.6: PROMPT FAVORITES — star/unstar any library prompt. Starred prompts
+  // surface in a "Favorites" group pinned ABOVE all tiers, and also show a filled
+  // star inline on their normal card. Persisted per-user in localStorage, keyed
+  // by the existing whoKey() helper so favorites follow the signed-in person.
+  // Pure frontend; no relay/Azure dependency.
+  const FAV_KEY_BASE = "bsaiwidget_favs_v1_";
+  function favKey(){ return FAV_KEY_BASE + (typeof whoKey === "function" ? whoKey() : "anon"); }
+  function getFavs(){ try { const a = JSON.parse(localStorage.getItem(favKey()) || "[]"); return Array.isArray(a) ? a : []; } catch(e){ return []; } }
+  function setFavs(arr){ try { localStorage.setItem(favKey(), JSON.stringify(arr)); } catch(e){} }
+  function promptId(item){ return item.title; } // titles are unique across PROMPT_LIBRARY
+  function isFav(item){ return getFavs().indexOf(promptId(item)) >= 0; }
+  function toggleFav(item){ const id = promptId(item); const favs = getFavs(); const i = favs.indexOf(id); if (i >= 0) favs.splice(i,1); else favs.unshift(id); setFavs(favs); }
+
+  // Build one prompt card. Used for both the pinned Favorites group and the
+  // normal tiers, so the inline star + click-to-use behavior stays identical.
+  function buildLibCard(item){
+    const card = document.createElement("div");
+    card.className = "lib-card";
+    const starred = isFav(item);
+    card.innerHTML =
+      '<div class="lc-top"><span class="lc-title"></span>' +
+        '<span class="lc-mode">' + item.mode + '</span>' +
+        '<button type="button" class="lc-star' + (starred ? " on" : "") + '" title="' + (starred ? "Remove from favorites" : "Add to favorites") + '" aria-label="Toggle favorite">' +
+          '<i class="ti ' + (starred ? "ti-star-filled" : "ti-star") + '"></i></button>' +
+      '</div>' +
+      '<div class="lc-desc"></div>' +
+      '<div class="lc-use"><i class="ti ti-arrow-right"></i>Use this prompt</div>';
+    card.querySelector(".lc-title").textContent = item.title;
+    card.querySelector(".lc-desc").textContent = item.desc;
+    const star = card.querySelector(".lc-star");
+    star.addEventListener("click", (ev) => {
+      ev.stopPropagation();           // don't trigger usePrompt
+      toggleFav(item);
+      renderLibrary();                // re-render so the pinned group + icon update
+    });
+    card.addEventListener("click", () => usePrompt(item));
+    return card;
+  }
+
   function renderLibrary(){
     if (!libList) return;
     const items = rankedLibrary();
@@ -1360,6 +1490,16 @@ const SUGGESTIONS = {
     if (!items.length){
       libList.innerHTML = '<div class="lib-empty">No prompts match that search.<br>Try a different word, or clear the filter.</div>';
       return;
+    }
+    // >>> v1.6: pinned Favorites group — favorites that survive the current
+    // mode/role/search filter, shown above all division tiers.
+    const favItems = items.filter(isFav);
+    if (favItems.length){
+      const flbl = document.createElement("div");
+      flbl.className = "lib-group-label fav";
+      flbl.innerHTML = '<i class="ti ti-star-filled"></i>Favorites';
+      libList.appendChild(flbl);
+      favItems.forEach(item => libList.appendChild(buildLibCard(item)));
     }
     const dk = userDivisionKey();
     let lastTier = -1;
@@ -1372,16 +1512,7 @@ const SUGGESTIONS = {
         libList.appendChild(lbl);
         lastTier = t;
       }
-      const card = document.createElement("div");
-      card.className = "lib-card";
-      card.innerHTML =
-        '<div class="lc-top"><span class="lc-title"></span><span class="lc-mode">' + item.mode + '</span></div>' +
-        '<div class="lc-desc"></div>' +
-        '<div class="lc-use"><i class="ti ti-arrow-right"></i>Use this prompt</div>';
-      card.querySelector(".lc-title").textContent = item.title;
-      card.querySelector(".lc-desc").textContent = item.desc;
-      card.addEventListener("click", () => usePrompt(item));
-      libList.appendChild(card);
+      libList.appendChild(buildLibCard(item)); // >>> v1.6: shared builder (inline star)
     });
   }
   function usePrompt(item){
@@ -1646,6 +1777,19 @@ const SUGGESTIONS = {
     bub.appendChild(row);
   }
 
+  // >>> v1.6: COPY ON USER MESSAGES — user bubbles previously had no action row.
+  // Add a single Copy button mirroring the assistant Copy behavior (raw text,
+  // "Copied" for ~1.5s). CSS right-justifies this row to match the user bubble.
+  function attachUserActions(bub, text){
+    const acts = document.createElement("div"); acts.className = "message-actions user-actions";
+    acts.innerHTML = '<button class="action-btn" data-a="copy"><i class="ti ti-copy"></i>Copy</button>';
+    acts.addEventListener("click", ev => {
+      const btn = ev.target.closest(".action-btn"); if(!btn) return;
+      if (btn.dataset.a === "copy"){ navigator.clipboard.writeText(text); btn.innerHTML='<i class="ti ti-check"></i>Copied'; setTimeout(()=>{ btn.innerHTML='<i class="ti ti-copy"></i>Copy'; }, 1500); }
+    });
+    bub.appendChild(acts);
+  }
+
   function bubble(role, text, skipPersist){
     if (welcome.parentNode) welcome.remove();
     if (!skipPersist) { transcript.push({ role: role, text: text }); }
@@ -1657,6 +1801,7 @@ const SUGGESTIONS = {
     if (role === "assistant" && window.marked) { bub.innerHTML = marked.parse(text); }
     else { bub.textContent = text; }
     if (role==="assistant"){ attachAssistantActions(bub, text); }
+    else { attachUserActions(bub, text); } // >>> v1.6: Copy on user messages
     m.appendChild(av); m.appendChild(bub); thread.appendChild(m); thread.scrollTop = thread.scrollHeight;
     if (!skipPersist) { saveConversation(); }
   }
@@ -1675,6 +1820,44 @@ const SUGGESTIONS = {
     if (window.marked) bub.innerHTML = marked.parse(text); else bub.textContent = text;
     thread.scrollTop = thread.scrollHeight;
   }
+  // >>> v1.6: SOURCE CITATION STRIP — DORMANT-SAFE. Renders a "Sources" strip
+  // under an assistant answer ONLY when a sources array is present. The current
+  // relay sends none, so this renders nothing and cannot break anything. Sources
+  // are captured from an SSE 'sources' frame (streaming path) or data.sources
+  // (JSON path) and passed in explicitly — no change to bubble()/finalize sigs.
+  // See "// >>> MARK (SOURCES):" for the relay contract.
+  function srcIcon(sys){
+    const x = (sys||"").toLowerCase();
+    if (x.indexOf("hubspot") >= 0) return "ti-building";
+    if (x.indexOf("sharepoint") >= 0 || x.indexOf("file") >= 0 || x.indexOf("doc") >= 0) return "ti-file-text";
+    if (x.indexOf("teams") >= 0) return "ti-message";
+    if (x.indexOf("outlook") >= 0 || x.indexOf("mail") >= 0) return "ti-mail";
+    if (x.indexOf("workamajig") >= 0 || x.indexOf("wmj") >= 0) return "ti-clipboard";
+    if (x.indexOf("web") >= 0) return "ti-world";
+    return "ti-link";
+  }
+  function renderSourcesStrip(bub, sources){
+    if (!bub || !sources || !Array.isArray(sources) || !sources.length) return;
+    const wrap = document.createElement("div"); wrap.className = "src-strip";
+    const label = document.createElement("div"); label.className = "src-label";
+    label.innerHTML = '<i class="ti ti-link"></i>Sources'; wrap.appendChild(label);
+    const items = document.createElement("div"); items.className = "src-items";
+    sources.forEach(srcItem => {
+      const name = (srcItem && (srcItem.title || srcItem.name || srcItem.label)) || "Source";
+      const sys = (srcItem && (srcItem.system || srcItem.type)) || "";
+      const url = (srcItem && srcItem.url) || "";
+      const el = url ? document.createElement("a") : document.createElement("span");
+      el.className = "src-chip" + (url ? "" : " src-chip-static");
+      if (url){ el.href = url; el.target = "_blank"; el.rel = "noopener noreferrer"; }
+      const ic = document.createElement("i"); ic.className = "ti " + srcIcon(sys); el.appendChild(ic);
+      const nm = document.createElement("span"); nm.className = "src-name"; nm.textContent = name; el.appendChild(nm);
+      if (sys){ const sp = document.createElement("span"); sp.className = "src-sys"; sp.textContent = sys; el.appendChild(sp); }
+      items.appendChild(el);
+    });
+    wrap.appendChild(items);
+    bub.appendChild(wrap);
+  }
+
   function finalizeAssistantBubble(bub, text){
     paintBubble(bub, text);
     attachAssistantActions(bub, text);
@@ -1839,6 +2022,7 @@ const SUGGESTIONS = {
         const bub = startAssistantBubble();
         let acc = "", buf = "", lastPaint = 0;
         let pendingAction = null; // >>> v1.5: holds a write-back action arriving via SSE 'action' frame
+        let pendingSources = null; // >>> v1.6: holds a sources array arriving via SSE 'sources' frame (dormant until relay emits it)
         const reader = res.body.getReader();
         const dec = new TextDecoder();
         try {
@@ -1861,12 +2045,15 @@ const SUGGESTIONS = {
                 renderUsage(j.usage); // live dollar meter over streaming (relay emits at stream end)
               } else if (j.type === "action" && j.action) {
                 pendingAction = j.action; // >>> v1.5: write-back proposal arrives just before message_stop
+              } else if (j.type === "sources" && j.sources) {
+                pendingSources = j.sources; // >>> v1.6: source citations arrive just before message_stop (dormant-safe)
               }
             }
           }
         } catch (streamErr) { /* render whatever streamed so far */ }
         const finalText = acc || "(No response)";
         finalizeAssistantBubble(bub, finalText);
+        renderSourcesStrip(bub, pendingSources); // >>> v1.6: dormant-safe — no-op unless the relay sent sources
         transcript.push({ role: "assistant", text: finalText });
         history.push({ role: "assistant", content: finalText });
         saveConversation();
@@ -1877,6 +2064,9 @@ const SUGGESTIONS = {
         if (data.error) throw new Error(data.error);
         typing(false);
         bubble("assistant", data.reply || "(No response)");
+        // >>> v1.6: dormant-safe source citations on the JSON fallback path —
+        // attach to the assistant bubble just rendered. No-op if data.sources absent.
+        if (data.sources){ const bubs = thread.querySelectorAll(".message.assistant .bubble"); const lastBub = bubs[bubs.length - 1]; renderSourcesStrip(lastBub, data.sources); }
         history.push({ role:"assistant", content: data.reply });
         if (data.usage) renderUsage(data.usage); // >>> v1.2: usage meter (#9), optional relay field
         // >>> v1.4: if write-back is enabled and the relay proposes an action, open the confirm dialog.
@@ -1966,6 +2156,14 @@ const SUGGESTIONS = {
   if(!overlay || !dialog) return; // markup not present — bail safely
   var current = null, lastFocus = null, onConfirmCb = null;
 
+  // >>> MARK (SOURCES): When the relay's answer draws on connector data, emit the
+  // sources alongside the reply so the frontend renders a Sources strip:
+  //   JSON path      -> add to the response body:  sources: [{ title, system, url? }]
+  //   Streaming path -> emit ONE SSE frame just before message_stop:
+  //                     data: {"type":"sources","sources":[{ "title": "...", "system": "...", "url": "..." }]}
+  // `system` is the connector name ("HubSpot","SharePoint","Teams","Outlook",
+  // "Workamajig","Web"); `url` is optional. Absence renders nothing (dormant-safe).
+  //
   // >>> MARK (WRITE): STUB executor. Replace by setting BSCE.executor to a function
   // that POSTs `action` to your write endpoint and returns a Promise (resolve =
   // success, reject(Error) = failure). The action contract is:
