@@ -71,6 +71,13 @@ v1.6 — PROMPT LIBRARY EXPANSION (frontend-only; data + comment changes)
     ?writeback=1 gate, SHARED_PASSWORD, MSAL config, relay endpoints, the
     97-prompt library, and all v1.6 features are untouched.
   ============================================================================
+  v1.7.1 — MOBILE LAYOUT PASS (frontend-only; CSS + 3 additive header hooks).
+    Fixes the narrow-viewport header collision, input-bar placeholder clipping,
+    meta-row wrap, and bubble density. One @media (max-width:640px) block plus
+    two `btn-label` spans and a `divider-collapse` class on the header dividers.
+    No JS logic, no IDs, no existing CSS rules, and no desktop behavior changed.
+    Search ">>> v1.7.1:". All v1.2-v1.7 features untouched.
+  ============================================================================
   v1.6 — READ-SIDE UX ADDITIONS (frontend-only; ships to the plain URL, no flag)
     Four additive, write-path-untouched enhancements on top of v1.5. Search
     "// >>> v1.6:" to find each addition.
@@ -595,6 +602,75 @@ a.src-chip:hover{border-color:var(--bs-green);color:var(--bs-green-dim);backgrou
   .bsce-foot-spacer{display:none;}
   .bsce-btn{width:100%;}
 }
+
+/* ==========================================================================
+   >>> v1.7.1: MOBILE LAYOUT PASS (CSS-only; additive). Fixes the header
+   collision, input-bar placeholder clipping, meta-row wrap, and bubble
+   density on narrow viewports. Nothing here runs on desktop (>640px), and
+   no IDs, scripts, or desktop rules are changed.
+   ========================================================================== */
+@media (max-width:640px){
+  /* --- Header: two tiers — brand on top, controls wrap below it --- */
+  .widget-header{
+    flex-direction:column; align-items:stretch; gap:10px;
+    padding:12px 16px 12px;
+  }
+  .widget-header-left{ gap:10px; }
+  .widget-logo{ width:30px; height:30px; font-size:13px; }
+  .widget-title{ font-size:15px; }
+  .widget-greeting{ font-size:11.5px; margin-top:2px; }
+  /* Control row: wraps gracefully instead of colliding, sits left-aligned */
+  .widget-status{
+    justify-content:flex-start; flex-wrap:wrap; gap:7px 10px;
+    row-gap:7px;
+  }
+  /* The "|" separators read as junk once things wrap — hide them on mobile */
+  .widget-status .divider-collapse{ display:none; }
+  /* History / New chat become icon-only to reclaim the row */
+  .widget-status .newchat-btn{ padding:6px 9px; }
+  .widget-status .newchat-btn .btn-label{
+    position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+    overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0;
+  }
+  .widget-status .newchat-btn i{ font-size:15px; margin:0; }
+  /* MS auth chip + usage text: allow them to shrink and wrap, not overflow */
+  .ms-user-chip{ font-size:10.5px; flex-wrap:wrap; }
+  .ms-signin-btn{ font-size:10.5px; padding:6px 10px; }
+  #usageSlot, #budget{ font-size:10.5px; }
+  .usage-pill{ font-size:10.5px; }
+  .build-badge{ font-size:10px; }
+
+  /* --- Mode pills + banner: a touch tighter --- */
+  .mode-pills{ padding:12px 16px 0; gap:6px; }
+  .mode-pill{ padding:7px 12px; }
+  .mode-banner{ margin:12px 16px 0; padding:10px 13px; font-size:12px; }
+
+  /* --- Thread + bubbles: reclaim vertical space, widen user bubble --- */
+  .thread{ padding:16px 16px; gap:13px; }
+  .bubble{
+    font-size:14.5px; line-height:1.55; padding:12px 14px;
+    max-width:none;
+  }
+  .message.user .bubble{ max-width:88%; }
+  .message-actions{ margin-top:12px; padding-top:11px; gap:6px; }
+  .reshape-row{ margin-top:8px; }
+  /* Download-as popover: keep it on-screen on a narrow viewport */
+  .dl-menu{ left:auto; right:0; min-width:172px; }
+
+  /* --- Welcome screen --- */
+  .welcome h2{ font-size:26px; }
+  .welcome p{ font-size:13.5px; }
+
+  /* --- Input bar: stop the placeholder clipping; compact SEND --- */
+  .input-bar{ padding:12px 16px 14px; }
+  .input-row{ gap:8px; padding:10px 11px; }
+  .input-field{ font-size:14px; min-width:0; }
+  .input-icon-btn{ font-size:18px; padding:2px; }
+  /* SEND: drop the wide label padding so the input field gets the room */
+  .send-btn{ padding:9px 14px; font-size:12px; flex-shrink:0; }
+  /* Meta row: stack the two notes instead of cramming them side by side */
+  .input-meta{ flex-direction:column; align-items:flex-start; gap:4px; margin-top:9px; }
+}
 </style>
 </head>
 <body>
@@ -610,13 +686,13 @@ a.src-chip:hover{border-color:var(--bs-green);color:var(--bs-green-dim);backgrou
   <div class="widget-status">
     <span id="msAuthSlot"></span>
     <span class="status-dot" id="modelStatus">Sonnet 4.6</span>
-    <span class="status-divider">|</span>
+    <span class="status-divider divider-collapse">|</span>
     <!-- >>> v1.2: usage meter pill (#9). Hidden until the relay returns a usage figure; degrades to the old text otherwise. -->
     <span id="usageSlot"><span id="budget">Internal testing · usage monitored</span></span>
-    <span class="status-divider">|</span>
-    <button id="historyBtn" class="newchat-btn" title="View past conversations (this device)"><i class="ti ti-history"></i>History</button>
-    <button id="newChatBtn" class="newchat-btn" title="Start a new chat (keeps your saved conversations)"><i class="ti ti-plus"></i>New chat</button>
-    <span class="status-divider">|</span>
+    <span class="status-divider divider-collapse">|</span>
+    <button id="historyBtn" class="newchat-btn" title="View past conversations (this device)"><i class="ti ti-history"></i><span class="btn-label">History</span></button>
+    <button id="newChatBtn" class="newchat-btn" title="Start a new chat (keeps your saved conversations)"><i class="ti ti-plus"></i><span class="btn-label">New chat</span></button>
+    <span class="status-divider divider-collapse">|</span>
     <span id="buildBadge" class="build-badge" title="Relay build — click to refresh">build …</span>
   </div>
 </div>
@@ -831,12 +907,12 @@ a.src-chip:hover{border-color:var(--bs-green);color:var(--bs-green-dim);backgrou
     if (msAccount) {
       const name = msAccount.name || msAccount.username || "Signed in";
       slot.innerHTML = '<span class="ms-user-chip"><span class="dot"></span>M365: ' + name +
-        ' <span class="signout" id="msSignOut">Sign out</span></span><span class="status-divider">|</span>';
+        ' <span class="signout" id="msSignOut">Sign out</span></span><span class="status-divider divider-collapse">|</span>';
       const so = document.getElementById("msSignOut"); if (so) so.onclick = msSignOut;
     } else {
       slot.innerHTML = '<button class="ms-signin-btn" id="msSignInBtn">' +
         '<svg class="ms-logo" viewBox="0 0 23 23" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="10" height="10" fill="#F25022"/><rect x="12" y="1" width="10" height="10" fill="#7FBA00"/><rect x="1" y="12" width="10" height="10" fill="#00A4EF"/><rect x="12" y="12" width="10" height="10" fill="#FFB900"/></svg>' +
-        'Sign in with Microsoft</button><span class="status-divider">|</span>';
+        'Sign in with Microsoft</button><span class="status-divider divider-collapse">|</span>';
       const btn = document.getElementById("msSignInBtn"); if (btn) btn.onclick = msSignIn;
     }
     }
