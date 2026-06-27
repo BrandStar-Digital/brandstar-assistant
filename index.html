@@ -71,6 +71,19 @@ v1.6 — PROMPT LIBRARY EXPANSION (frontend-only; data + comment changes)
     ?writeback=1 gate, SHARED_PASSWORD, MSAL config, relay endpoints, the
     97-prompt library, and all v1.6 features are untouched.
   ============================================================================
+  v1.8 — SAVE TO SHAREPOINT (frontend half; flag-gated, write action).
+    Adds a "Save to SharePoint…" path to the Download-as menu, shown ONLY on
+    ?writeback=1. It reuses the v1.7 file engine (Word/Excel/PDF/PowerPoint and
+    Markdown) to produce the bytes, then routes through the existing BSCE
+    confirm-before-execute dialog as a new action type ("sharepoint_save") and
+    the existing /api/widget-write executor. Saves AS the signed-in user via
+    delegated Graph (Files.ReadWrite added to GRAPH_SCOPES — needs IT consent).
+    RELAY DEPENDENCY: Mark adds a handler for action.type "sharepoint_save"
+    (decode base64 → write to the user's SharePoint → {ok:true, webUrl?}). Until
+    then, approve shows a clean error and writes nothing. The plain production URL
+    never shows the menu item — byte-for-byte unchanged. Search ">>> v1.8:".
+    Contract: ">>> MARK (WRITE):" and ">>> MARK (SHAREPOINT SAVE):" below.
+  ============================================================================
   v1.7.1 — MOBILE LAYOUT PASS (frontend-only; CSS + 3 additive header hooks).
     Fixes the narrow-viewport header collision, input-bar placeholder clipping,
     meta-row wrap, and bubble density. One @media (max-width:640px) block plus
@@ -137,6 +150,9 @@ v1.6 — PROMPT LIBRARY EXPANSION (frontend-only; data + comment changes)
     7. SOURCES   — V1.6: when the answer draws on connector data, emit a `sources`
                    array so the frontend renders a Sources strip. See
                    "// >>> MARK (SOURCES):" below for the one-line contract.
+    8. SP SAVE   — V1.8: handle action.type "sharepoint_save" on the write endpoint
+                   (decode base64 -> write to the user's SharePoint as the user via
+                   delegated Files.ReadWrite). See "// >>> MARK (SHAREPOINT SAVE):".
   Frontend NEVER holds the API key or connector tokens. Secrets live in Azure
   Key Vault and are used only by the Azure Function.
   ============================================================================
@@ -485,6 +501,11 @@ a.src-chip:hover{border-color:var(--bs-green);color:var(--bs-green-dim);backgrou
 .dl-item:disabled{opacity:.45;cursor:default;}
 .dl-item:disabled:hover{color:var(--aibios-text-muted);border-color:transparent;background:transparent;}
 .dl-item .dl-hint{margin-left:auto;font-size:9.5px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:var(--aibios-text-subtle);}
+/* >>> v1.8: Save-to-SharePoint menu items (shown only on ?writeback=1). */
+.dl-sep{height:1px;background:var(--aibios-border);margin:4px 2px;display:block;}
+.dl-item-save{color:var(--bs-green-dim);}
+.dl-item-save:hover{color:var(--bs-green);border-color:var(--bs-green);background:rgba(0,168,114,.08);}
+.dl-menu:has(.dl-item-save){min-width:230px;}
 /* Voice mic button — reuses .input-icon-btn; active recording state pulses green */
 .input-icon-btn.mic-on{color:var(--bs-green);opacity:1;animation:micPulse 1.1s ease-in-out infinite;}
 @keyframes micPulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.55;transform:scale(1.12);}}
@@ -834,7 +855,10 @@ a.src-chip:hover{border-color:var(--bs-green);color:var(--bs-green-dim);backgrou
   // >>> v1.5: write scopes appended for write-back Wave 1 (tenant-admin-consented).
   // Relay calls Graph directly with the token MSAL acquires here. Until consent
   // lands these simply return clean 403s on write — chat/read are unaffected.
-  const GRAPH_SCOPES = ["User.Read", "Mail.Read", "Calendars.Read", "Chat.Read", "Mail.ReadWrite", "Tasks.ReadWrite", "ChannelMessage.Send"];
+  // >>> v1.8: Files.ReadWrite added for Save-to-SharePoint (delegated, acts as the
+  // user). NEEDS Joel/Entra admin consent like the other write scopes; until then
+  // SharePoint save returns a clean 403 and writes nothing. Read/chat unaffected.
+  const GRAPH_SCOPES = ["User.Read", "Mail.Read", "Calendars.Read", "Chat.Read", "Mail.ReadWrite", "Tasks.ReadWrite", "ChannelMessage.Send", "Files.ReadWrite"];
 
   let msalApp = null, msAccount = null;
   const msalReady = (typeof msal !== "undefined" && msal && msal.PublicClientApplication);
@@ -1412,9 +1436,19 @@ const SUGGESTIONS = {
   // already-loaded SheetJS (XLSX) for Excel. Read-side only: every path produces
   // a file downloaded to the user's device. No upload, no server, no relay call,
   // nothing touches the chat/streaming/write-back paths.
-  //   >>> MARK (SHAREPOINT SAVE): saving a generated file to SharePoint would be a
-  //   *write* (confirm-before-execute + a relay endpoint). Intentionally NOT wired
-  //   here — files download to the device only. Seam left for the relay owner.
+  //   >>> MARK (SHAREPOINT SAVE): v1.8 wires the FRONTEND half of save-to-SharePoint.
+  //   The same brand-styled generators below now also return their bytes (via a
+  //   `deliver` callback) instead of only downloading. A "Save to SharePoint…"
+  //   item appears in the Download-as menu ONLY on ?writeback=1, opens the BSCE
+  //   confirm dialog (action type "sharepoint_save"), and on approve POSTs the
+  //   file to /api/widget-write through the SAME executor the other writes use.
+  //   RELAY OWNER (Mark): add a handler for action.type === "sharepoint_save".
+  //   Contract is documented at ">>> MARK (WRITE):" near BSCE. The file arrives
+  //   as base64 + filename + mimeType + a chosen destination hint; write it via
+  //   Graph as the signed-in user (delegated Files.ReadWrite — NOT application
+  //   permission), return {ok:true, webUrl?}. Until that handler exists, approve
+  //   returns a clean error and nothing is written. Production (plain URL) never
+  //   sees the menu item — byte-for-byte unchanged.
   // ==========================================================================
   const FILE_FOOTER = "Generated by the BrandStar AI Assistant";
   function fileStamp(){ return new Date().toISOString().slice(0,10); }
@@ -1427,6 +1461,32 @@ const SUGGESTIONS = {
     a.href = url; a.download = filename;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
+
+  // >>> v1.8: Delivery router. The file generators below produce a Blob, then call
+  // deliverBlob(). With no active "deliver" target it downloads to the device
+  // exactly as before (v1.7 behavior, unchanged). When a target callback is set
+  // (the Save-to-SharePoint flow sets one for a single generation), the bytes are
+  // handed to that callback instead of downloading. This keeps ONE file engine
+  // feeding both download and save — no duplicate generation code.
+  let __deliverTarget = null; // function({blob, filename, mimeType}) | null
+  function deliverBlob(blob, filename, mimeType){
+    if (typeof __deliverTarget === "function"){
+      const cb = __deliverTarget; __deliverTarget = null; // one-shot
+      try { cb({ blob: blob, filename: filename, mimeType: mimeType || blob.type || "application/octet-stream" }); }
+      catch(e){ console.warn("[v1.8] deliver target threw:", e); }
+      return;
+    }
+    downloadBlob(blob, filename);
+  }
+  // Read a Blob as a base64 string (no data: prefix) for relay transport.
+  function blobToBase64(blob){
+    return new Promise(function(resolve, reject){
+      const r = new FileReader();
+      r.onload = function(){ const s = String(r.result||""); const i = s.indexOf(","); resolve(i>=0 ? s.slice(i+1) : s); };
+      r.onerror = function(){ reject(new Error("Could not read the generated file.")); };
+      r.readAsDataURL(blob);
+    });
   }
 
   // Brief visual feedback on the clicked menu item.
@@ -1484,7 +1544,7 @@ const SUGGESTIONS = {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "BrandStar AI");
     const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-    downloadBlob(new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), fileBase() + ".xlsx");
+    deliverBlob(new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), fileBase() + ".xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     dlFeedback(srcEl, true, "Excel ready");
   }
 
@@ -1554,7 +1614,7 @@ const SUGGESTIONS = {
         sections:[{ properties:{}, children }]
       });
       Packer.toBlob(doc).then(blob => {
-        downloadBlob(blob, fileBase() + ".docx");
+        deliverBlob(blob, fileBase() + ".docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
         dlFeedback(srcEl, true, "Word ready");
       }).catch(() => generateDocxHtmlFallback(text, srcEl));
       return;
@@ -1572,7 +1632,7 @@ const SUGGESTIONS = {
       'th{background:#00A872;color:#fff;} .ft{color:#888;font-style:italic;font-size:9pt;margin-top:24pt;}</style></head>' +
       '<body><h1 style="color:#00A872;">BrandStar AI Assistant</h1><p style="color:#888;">' + fileStamp() + '</p>' +
       inner + '<p class="ft">' + FILE_FOOTER + '</p></body></html>';
-    downloadBlob(new Blob(["\ufeff", html], { type:"application/msword" }), fileBase() + ".doc");
+    deliverBlob(new Blob(["\ufeff", html], { type:"application/msword" }), fileBase() + ".doc", "application/msword");
     dlFeedback(srcEl, true, "Word ready");
   }
 
@@ -1593,15 +1653,23 @@ const SUGGESTIONS = {
     holder.querySelectorAll("th,td").forEach(c => { c.style.cssText="border:1px solid #ccc;padding:6px 9px;text-align:left;"; });
     holder.querySelectorAll("th").forEach(c => { c.style.background="#00A872"; c.style.color="#fff"; });
     holder.querySelectorAll("h1,h2,h3").forEach(h => { h.style.color="#00A872"; });
-    html2pdf().set({
+    var worker = html2pdf().set({
       margin: 10, filename: fileBase() + ".pdf",
       image: { type:"jpeg", quality:0.96 },
       html2canvas: { scale:2, useCORS:true, backgroundColor:"#ffffff" },
       jsPDF: { unit:"mm", format:"a4", orientation:"portrait" },
       pagebreak: { mode:["avoid-all","css","legacy"] }
-    }).from(holder).save()
-      .then(() => dlFeedback(srcEl, true, "PDF ready"))
-      .catch(() => dlFeedback(srcEl, false, "PDF failed"));
+    }).from(holder);
+    if (typeof __deliverTarget === "function"){
+      // >>> v1.8: deliver bytes (Save to SharePoint) instead of downloading.
+      worker.outputPdf("blob")
+        .then(blob => { deliverBlob(blob, fileBase() + ".pdf", "application/pdf"); dlFeedback(srcEl, true, "PDF ready"); })
+        .catch(() => { __deliverTarget = null; dlFeedback(srcEl, false, "PDF failed"); });
+    } else {
+      worker.save()
+        .then(() => dlFeedback(srcEl, true, "PDF ready"))
+        .catch(() => dlFeedback(srcEl, false, "PDF failed"));
+    }
   }
 
   // --- POWERPOINT (.pptx) — PptxGenJS ----------------------------------------
@@ -1648,9 +1716,16 @@ const SUGGESTIONS = {
         s.addText(FILE_FOOTER, { x:0.6, y:7.05, w:12.1, h:0.3, fontFace:"Montserrat", fontSize:9, italic:true, color:"888888" });
       });
 
-      pptx.writeFile({ fileName: fileBase() + ".pptx" })
-        .then(() => dlFeedback(srcEl, true, "PowerPoint ready"))
-        .catch(() => dlFeedback(srcEl, false, "PPTX failed"));
+      if (typeof __deliverTarget === "function"){
+        // >>> v1.8: deliver bytes (Save to SharePoint) instead of downloading.
+        pptx.write("blob")
+          .then(blob => { deliverBlob(blob, fileBase() + ".pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"); dlFeedback(srcEl, true, "PowerPoint ready"); })
+          .catch(() => { __deliverTarget = null; dlFeedback(srcEl, false, "PPTX failed"); });
+      } else {
+        pptx.writeFile({ fileName: fileBase() + ".pptx" })
+          .then(() => dlFeedback(srcEl, true, "PowerPoint ready"))
+          .catch(() => dlFeedback(srcEl, false, "PPTX failed"));
+      }
     } catch(e){ dlFeedback(srcEl, false, "PPTX failed"); }
   }
 
@@ -1663,6 +1738,50 @@ const SUGGESTIONS = {
       if (kind === "pdf"){ generatePdf(text, srcEl); return; }
       if (kind === "pptx"){ generatePptx(text, srcEl); return; }
     } catch(e){ console.warn("[v1.7] file generation failed:", e); dlFeedback(srcEl, false, "Couldn’t generate"); }
+  }
+
+  // >>> v1.8: SAVE TO SHAREPOINT — generate the chosen format to a Blob (reusing
+  // the exact same brand-styled engine as Download), then open the BSCE confirm
+  // dialog. On approve, the existing executor POSTs the file to /api/widget-write
+  // as a "sharepoint_save" action. This is a WRITE: only reachable on ?writeback=1
+  // (the menu item is hidden otherwise) and always confirm-before-execute.
+  function buildMarkdownBlob(text){
+    return new Blob([String(text||"")], { type:"text/markdown" });
+  }
+  function saveToSharePoint(kind, text, srcEl){
+    if (!WRITEBACK_ENABLED || !window.BSCE){ return; } // belt-and-suspenders; menu item is hidden anyway
+    // md has no generator (it downloads directly), so build its blob inline.
+    if (kind === "md"){
+      finishSharePointSave(buildMarkdownBlob(text), fileBase() + ".md", "text/markdown", srcEl);
+      return;
+    }
+    // For docx/xlsx/pdf/pptx: set a one-shot deliver target, then run the SAME
+    // generator. It hands us {blob, filename, mimeType} instead of downloading.
+    __deliverTarget = function(out){ finishSharePointSave(out.blob, out.filename, out.mimeType, srcEl); };
+    try { generateFile(kind, text, srcEl); }
+    catch(e){ __deliverTarget = null; dlFeedback(srcEl, false, "Couldn’t generate"); }
+  }
+  function finishSharePointSave(blob, filename, mimeType, srcEl){
+    blobToBase64(blob).then(function(b64){
+      var sizeKB = Math.max(1, Math.round((blob.size||0)/1024));
+      BSCE.open({
+        type: "sharepoint_save",
+        // What the relay needs to perform the write:
+        fileName: filename,
+        mimeType: mimeType,
+        contentBase64: b64,
+        // Destination hint. The relay resolves the user's SharePoint/OneDrive
+        // target; this is a suggested folder, not a hard path.
+        destinationHint: "BrandStar AI Assistant",
+        // What the user sees in the confirm dialog:
+        preview: {
+          fileName: filename,
+          format: (filename.split(".").pop() || "").toUpperCase(),
+          size: sizeKB + " KB",
+          destination: "Your SharePoint · BrandStar AI Assistant folder"
+        }
+      });
+    }).catch(function(){ dlFeedback(srcEl, false, "Couldn’t prepare file"); });
   }
 
   // Close any open Download-as popover on outside click / Escape.
@@ -2442,12 +2561,29 @@ const SUGGESTIONS = {
           '<button type="button" class="dl-item" data-dl="pdf"><i class="ti ti-file-type-pdf"></i>PDF<span class="dl-hint">.pdf</span></button>'+
           '<button type="button" class="dl-item" data-dl="pptx"><i class="ti ti-file-type-ppt"></i>PowerPoint<span class="dl-hint">.pptx</span></button>'+
           '<button type="button" class="dl-item" data-dl="md"><i class="ti ti-markdown"></i>Markdown<span class="dl-hint">.md</span></button>'+
+          // >>> v1.8: Save to SharePoint — WRITE action, shown only on ?writeback=1.
+          // Hidden entirely on the plain production URL, so it stays byte-for-byte v1.7.
+          (WRITEBACK_ENABLED
+            ? '<span class="dl-sep" role="separator"></span>'+
+              '<button type="button" class="dl-item dl-item-save" data-save="docx"><i class="ti ti-cloud-upload"></i>Save to SharePoint…<span class="dl-hint">Word</span></button>'+
+              '<button type="button" class="dl-item dl-item-save" data-save="xlsx"><i class="ti ti-cloud-upload"></i>Save to SharePoint…<span class="dl-hint">Excel</span></button>'+
+              '<button type="button" class="dl-item dl-item-save" data-save="pdf"><i class="ti ti-cloud-upload"></i>Save to SharePoint…<span class="dl-hint">PDF</span></button>'+
+              '<button type="button" class="dl-item dl-item-save" data-save="pptx"><i class="ti ti-cloud-upload"></i>Save to SharePoint…<span class="dl-hint">PPT</span></button>'
+            : '')+
         '</span>'+
       '</span>'+
       '<button class="action-btn" data-a="email"><i class="ti ti-mail"></i>Email to me</button>'+
       '<button class="action-btn" data-a="regen"><i class="ti ti-refresh"></i>Regenerate</button>'+
       '<button class="action-btn action-btn-opus" data-a="opus"><i class="ti ti-sparkles"></i>Use Opus 4.8 for deeper analysis</button>';
     acts.addEventListener("click", ev => {
+      // >>> v1.8: Save-to-SharePoint menu item (write; handled before download path).
+      const saveItem = ev.target.closest(".dl-item-save");
+      if (saveItem){
+        ev.stopPropagation();
+        const wrap = acts.querySelector(".dl-wrap"); if (wrap) wrap.classList.remove("open");
+        saveToSharePoint(saveItem.dataset.save, text, saveItem);
+        return;
+      }
       // >>> v1.7: Download-as menu item click (handled before the generic action-btn path).
       const dlItem = ev.target.closest(".dl-item");
       if (dlItem){
@@ -2817,7 +2953,8 @@ const SUGGESTIONS = {
     undo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M3 13a9 9 0 1 0 3-7.7L3 8"/></svg>',
     eye:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>',
     pin:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.7 7-12a7 7 0 1 0-14 0c0 5.3 7 12 7 12Z"/><circle cx="12" cy="9" r="2.5"/></svg>',
-    warn:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>'
+    warn:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>',
+    sharepoint:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13V3"/><path d="m8 7 4-4 4 4"/><path d="M20 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4"/></svg>'
   };
 
   var TYPES = {
@@ -2855,6 +2992,16 @@ const SUGGESTIONS = {
       rev:{cls:"rev-visible",label:"Visible to colleagues",icon:I.eye}, verb:"Post to Teams", danger:true,
       dest:null,
       render:function(p){ return rowsCard([["Channel", esc(p.channel)],["Team", esc(p.team)||muted("")]].filter(function(r){return r[1];})) + bodyBlock("Message", p.message) + noteBlock("Once posted, colleagues can see this immediately. Review it before confirming."); }
+    },
+    // >>> v1.8: Save a generated file to the user's SharePoint. Saves AS the
+    // signed-in user (relay uses their delegated Graph token). Additive — creates
+    // a new file; does not overwrite or alter connector records.
+    sharepoint_save:{
+      eyebrow:"SharePoint", icon:I.sharepoint, title:"Save this file to SharePoint",
+      sub:"Saves a copy of the generated file to your SharePoint, as you. Nothing is shared or sent — you control it from there.",
+      rev:{cls:"rev-self",label:"Saved as you",icon:I.lockSelf}, verb:"Save to SharePoint", danger:false,
+      dest:"Your SharePoint · BrandStar AI Assistant folder",
+      render:function(p){ return rowsCard([["File", esc(p.fileName)],["Format", esc(p.format)],["Size", esc(p.size)||muted("—")]]); }
     }
   };
 
@@ -2889,6 +3036,12 @@ const SUGGESTIONS = {
   //   hubspot_note  : recordName, recordType, note
   //   wmj_time_entry: project, task?, hours, date, description?
   //   teams_post    : channel, team?, message
+  //   sharepoint_save (v1.8): top-level fileName, mimeType, contentBase64,
+  //                   destinationHint; preview:{ fileName, format, size, destination }.
+  //                   RELAY: decode contentBase64, write to the signed-in user's
+  //                   SharePoint via delegated Graph (Files.ReadWrite — NOT an
+  //                   application permission, per governance: the widget never has
+  //                   more access than the user). Return {ok:true, webUrl?}.
   function defaultExecutor(action){
     return new Promise(function(resolve){
       console.log("[BSCE stub] would execute:", JSON.parse(JSON.stringify(action)));
@@ -2976,6 +3129,9 @@ const SUGGESTIONS = {
       case "hubspot_note":  return "Note added in HubSpot, signed with your name.";
       case "wmj_time_entry":return "Time entry logged to your Workamajig timesheet.";
       case "teams_post":    return "Posted to Teams. You can edit or delete it from Teams if needed.";
+      case "sharepoint_save": return (action.preview && action.preview.fileName)
+        ? ("Saved “" + action.preview.fileName + "” to your SharePoint.")
+        : "Saved to your SharePoint.";
       default: return "Action completed.";
     }
   }
@@ -3028,10 +3184,11 @@ const SUGGESTIONS = {
       todo_create:{ type:"todo_create", preview:{ title:"Send Mark the two branch decisions", due:"Tomorrow, 9:00 AM", notes:"Hold the deletes until he confirms main is the source of truth." }},
       hubspot_note:{ type:"hubspot_note", preview:{ recordName:"Britton Marketing & Design", recordType:"Company", note:"Consolidated AI plan sent to Meg + Eri. Awaiting finance-mountain inputs." }},
       wmj_time_entry:{ type:"wmj_time_entry", preview:{ project:"BrandStar AI Assistant — Wave 1", task:"Frontend — confirm UX", hours:"2.5", date:"Jun 22, 2026", description:"Built shared confirm dialog, 5 action types, flag-gated." }},
-      teams_post:{ type:"teams_post", preview:{ channel:"AI Enablement", team:"BrandStar Digital", message:"Confirm-before-execute UX for write-back Wave 1 is built and flag-gated. Lights up when the relay write endpoints land." }}
+      teams_post:{ type:"teams_post", preview:{ channel:"AI Enablement", team:"BrandStar Digital", message:"Confirm-before-execute UX for write-back Wave 1 is built and flag-gated. Lights up when the relay write endpoints land." }},
+      sharepoint_save:{ type:"sharepoint_save", fileName:"BrandStar-AI-2026-06-27.docx", mimeType:"application/vnd.openxmlformats-officedocument.wordprocessingml.document", contentBase64:"UEsDBBQAAAA=", destinationHint:"BrandStar AI Assistant", preview:{ fileName:"BrandStar-AI-2026-06-27.docx", format:"DOCX", size:"42 KB", destination:"Your SharePoint · BrandStar AI Assistant folder" }}
     };
     window.bsceQA = function(type){ BSCE.open(SAMPLES[type || "teams_post"]); };
-    console.log("[BSCE] write-back test mode on. Try: bsceQA('outlook_draft' | 'todo_create' | 'hubspot_note' | 'wmj_time_entry' | 'teams_post')");
+    console.log("[BSCE] write-back test mode on. Try: bsceQA('outlook_draft' | 'todo_create' | 'hubspot_note' | 'wmj_time_entry' | 'teams_post' | 'sharepoint_save')");
   }
 })();
 </script>
