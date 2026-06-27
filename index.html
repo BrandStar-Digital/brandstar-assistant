@@ -647,11 +647,18 @@ a.src-chip:hover{border-color:var(--bs-green);color:var(--bs-green-dim);backgrou
 
   /* --- Thread + bubbles: reclaim vertical space, widen user bubble --- */
   .thread{ padding:16px 16px; gap:13px; }
+  /* Keep the whole message column inside the viewport */
+  .message{ max-width:100%; }
   .bubble{
     font-size:14.5px; line-height:1.55; padding:12px 14px;
-    max-width:none;
+    max-width:100%; min-width:0;
+    /* Hard-wrap long tokens (URLs, IDs) so the bubble never forces a sideways scroll */
+    overflow-wrap:anywhere; word-break:break-word;
   }
   .message.user .bubble{ max-width:88%; }
+  /* Pre/code/table scroll *inside* the bubble instead of stretching it */
+  .bubble pre{ max-width:100%; overflow-x:auto; }
+  .bubble table{ display:block; max-width:100%; overflow-x:auto; }
   .message-actions{ margin-top:12px; padding-top:11px; gap:6px; }
   .reshape-row{ margin-top:8px; }
   /* Download-as popover: keep it on-screen on a narrow viewport */
@@ -662,7 +669,7 @@ a.src-chip:hover{border-color:var(--bs-green);color:var(--bs-green-dim);backgrou
   .welcome p{ font-size:13.5px; }
 
   /* --- Input bar: stop the placeholder clipping; compact SEND --- */
-  .input-bar{ padding:12px 16px 14px; }
+  .input-bar{ padding:12px 16px calc(18px + env(safe-area-inset-bottom,0px)); }
   .input-row{ gap:8px; padding:10px 11px; }
   .input-field{ font-size:14px; min-width:0; }
   .input-icon-btn{ font-size:18px; padding:2px; }
