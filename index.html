@@ -71,6 +71,22 @@ v1.6 — PROMPT LIBRARY EXPANSION (frontend-only; data + comment changes)
     ?writeback=1 gate, SHARED_PASSWORD, MSAL config, relay endpoints, the
     97-prompt library, and all v1.6 features are untouched.
   ============================================================================
+  v1.8.2 — USABILITY + ADOPTION (frontend-only; no relay dependency).
+    Four additive features, none touching the chat/streaming/write paths:
+      1. "Open in SharePoint" link — the save success dialog now surfaces the
+         relay's webUrl as a clickable link (renderResult threads the executor
+         result). No-op when no webUrl is returned. Search ">>> v1.8.2:".
+      2. Official recipes — a curated, read-only set of multi-step recipes
+         shipped for all users (OFFICIAL_RECIPES), shown in the Prompts library
+         below personal recipes. Run in one click; "copy to my recipes" to edit.
+      3. First-run onboarding — a one-time "what can this do" panel (per-user
+         localStorage flag) highlighting internal data, file generation, and
+         write-back. Re-openable from the welcome screen.
+      4. Mobile polish — larger touch targets, scrollable write-back download
+         menu, sources-strip wrapping, full-width panels, dialog comfort.
+    All client-side. Plain production URL unchanged except these additive UX
+    features (write items still gated behind ?writeback=1).
+  ============================================================================
   v1.8.1 — SHAREPOINT SAVE CONTRACT FIX (frontend-only; ?writeback=1 path).
     The relay validator allow-lists `preview` fields and rejected the cosmetic
     extras (format/size/destination) with a 400. Fix: `preview` for sharepoint_save
@@ -522,6 +538,9 @@ a.src-chip:hover{border-color:var(--bs-green);color:var(--bs-green-dim);backgrou
 .lib-group-label.recipe i{font-size:13px;}
 .recipe-card{border:1px solid var(--aibios-border-soft);border-radius:11px;padding:13px 15px;margin-bottom:9px;cursor:pointer;transition:border-color 160ms var(--ease),background 160ms var(--ease);}
 .recipe-card:hover{border-color:var(--bs-green);background:rgba(0,168,114,.05);}
+/* >>> v1.8.2: official (curated) recipe cards — subtle left accent, read-only */
+.recipe-card-official{border-left:3px solid var(--bs-green);}
+.recipe-card-official .rc-actions button.cpy:hover{color:var(--bs-green-dim);}
 .recipe-card .rc-top{display:flex;align-items:center;justify-content:space-between;gap:10px;}
 .recipe-card .rc-title{font-size:13.5px;font-weight:800;color:var(--aibios-text);}
 .recipe-card .rc-count{font-size:10px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:var(--bs-green);background:rgba(0,168,114,.10);border-radius:5px;padding:2px 7px;flex-shrink:0;}
@@ -623,6 +642,11 @@ a.src-chip:hover{border-color:var(--bs-green);color:var(--bs-green-dim);backgrou
 .bsce-result.err .bsce-result-icon{background:#FBE6E3;color:#B23A2E;}
 .bsce-result-title{font-size:18px;font-weight:800;color:var(--aibios-text);}
 .bsce-result-msg{font-size:13.5px;color:var(--aibios-text-muted);margin-top:5px;line-height:1.5;font-weight:500;}
+/* >>> v1.8.2: Open in SharePoint link in the success dialog (when relay returns webUrl) */
+.bsce-result-link{margin-top:16px;}
+.bsce-result-link a{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:700;color:var(--bs-green-dim);text-decoration:none;border:1px solid var(--bs-green);border-radius:8px;padding:9px 16px;transition:background 140ms var(--ease),color 140ms var(--ease);}
+.bsce-result-link a:hover{background:rgba(0,168,114,.08);color:var(--bs-green);}
+.bsce-result-link a svg{width:15px;height:15px;}
 @media (max-width:520px){
   .bsce-overlay{padding:0;align-items:flex-end;}
   .bsce-dialog{max-width:100%;border-radius:16px 16px 0 0;max-height:92vh;}
@@ -632,7 +656,42 @@ a.src-chip:hover{border-color:var(--bs-green);color:var(--bs-green-dim);backgrou
 }
 
 /* ==========================================================================
-   >>> v1.7.1: MOBILE LAYOUT PASS (CSS-only; additive). Fixes the header
+   >>> v1.8.2: FIRST-RUN ONBOARDING — a one-time "what can this do" panel.
+   App-scoped (.ob-). Shown once per user via a localStorage flag; re-openable
+   from the welcome screen. Highlights the differentiators (internal data, file
+   generation, write-back) so 100+ non-seat-holders discover them.
+   ========================================================================== */
+.ob-overlay{position:fixed;inset:0;z-index:1200;background:rgba(10,14,26,.5);display:none;align-items:center;justify-content:center;padding:20px;}
+.ob-overlay.open{display:flex;}
+.ob-dialog{background:var(--aibios-bg);width:100%;max-width:540px;max-height:calc(100vh - 40px);display:flex;flex-direction:column;border-radius:16px;box-shadow:0 24px 60px rgba(10,14,26,.3);overflow:hidden;animation:slideIn 220ms var(--ease);}
+.ob-head{display:flex;align-items:center;gap:13px;padding:22px 24px 16px;border-bottom:1px solid var(--aibios-border);}
+.ob-logo{width:38px;height:38px;border-radius:9px;background:var(--bs-green-core);color:#fff;font-weight:900;font-size:15px;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 4px 14px var(--bs-green-glow);}
+.ob-title{font-size:18px;font-weight:800;color:var(--aibios-text);line-height:1.15;}
+.ob-sub{font-size:13px;font-weight:500;color:var(--aibios-text-muted);margin-top:3px;}
+.ob-body{padding:8px 24px 4px;overflow-y:auto;}
+.ob-item{display:flex;gap:13px;padding:13px 0;border-bottom:1px solid var(--aibios-border);}
+.ob-item:last-child{border-bottom:none;}
+.ob-ico{flex:0 0 auto;width:34px;height:34px;border-radius:8px;background:rgba(0,168,114,.10);color:var(--bs-green-dim);display:flex;align-items:center;justify-content:center;}
+.ob-ico i{font-size:18px;}
+.ob-it-title{font-size:14px;font-weight:800;color:var(--aibios-text);}
+.ob-it-desc{font-size:12.5px;font-weight:500;color:var(--aibios-text-muted);margin-top:3px;line-height:1.5;}
+.ob-foot{padding:14px 24px 18px;border-top:1px solid var(--aibios-border);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.ob-dont{font-size:12px;font-weight:600;color:var(--aibios-text-subtle);display:inline-flex;align-items:center;gap:7px;cursor:pointer;}
+.ob-dont input{accent-color:var(--bs-green);width:15px;height:15px;cursor:pointer;}
+.ob-btn{font-family:inherit;font-size:13.5px;font-weight:800;padding:10px 20px;background:var(--bs-green-core);color:#fff;border:none;border-radius:8px;cursor:pointer;box-shadow:0 4px 14px var(--bs-green-glow);transition:background 160ms var(--ease);}
+.ob-btn:hover{background:var(--bs-green-dim);}
+/* Re-open link on the welcome screen */
+.ob-reopen{margin-top:10px;font-size:12px;font-weight:700;color:var(--aibios-text-subtle);cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
+.ob-reopen:hover{color:var(--bs-green-dim);}
+.ob-reopen i{font-size:14px;}
+@media (max-width:640px){
+  .ob-overlay{padding:0;align-items:flex-end;}
+  .ob-dialog{max-width:100%;border-radius:16px 16px 0 0;max-height:90vh;}
+  .ob-foot{flex-direction:column-reverse;align-items:stretch;}
+  .ob-btn{width:100%;}
+  .ob-dont{justify-content:center;}
+}
+
    collision, input-bar placeholder clipping, meta-row wrap, and bubble
    density on narrow viewports. Nothing here runs on desktop (>640px), and
    no IDs, scripts, or desktop rules are changed.
@@ -706,7 +765,41 @@ a.src-chip:hover{border-color:var(--bs-green);color:var(--bs-green-dim);backgrou
   /* Meta row: stack the two notes instead of cramming them side by side */
   .input-meta{ flex-direction:column; align-items:flex-start; gap:4px; margin-top:9px; }
 }
-</style>
+
+/* ==========================================================================
+   >>> v1.8.2: MOBILE POLISH (CSS-only; additive). Real-use refinements now that
+   staff use the widget heavily on phones — larger touch targets, the longer
+   write-back download menu, sources strip wrapping, and panel/dialog comfort.
+   ========================================================================== */
+@media (max-width:640px){
+  /* Action buttons: bigger tap targets, comfortable wrapping */
+  .action-btn{ padding:8px 12px; font-size:12px; min-height:38px; }
+  .reshape-btn{ padding:7px 11px; min-height:36px; }
+  /* Download-as menu now carries up to 9 items on ?writeback=1 — let it scroll
+     within the viewport instead of running off the bottom on a small screen */
+  .dl-menu{ max-height:60vh; overflow-y:auto; min-width:200px; }
+  .dl-item{ padding:10px 11px; min-height:42px; }
+  /* Sources strip: chips wrap and stay tappable; names don't over-truncate */
+  .src-chip{ padding:7px 11px; min-height:36px; }
+  .src-chip .src-name{ max-width:62vw; }
+  /* Library + recipe panels: full-width comfort, larger cards */
+  .lib-panel, .history-panel{ width:100vw; max-width:100vw; }
+  .lib-card, .recipe-card{ padding:14px 15px; }
+  .lib-card .lc-use, .recipe-card .rc-run{ min-height:30px; }
+  .lib-filter{ padding:7px 13px; min-height:36px; }
+  /* Recipe modal: comfortable on a phone */
+  .rcp-dialog{ max-width:100%; border-radius:14px 14px 0 0; }
+  .rcp-overlay{ align-items:flex-end; padding:0; }
+  /* Document preview panel: full width on mobile */
+  .preview-panel{ width:100vw; max-width:100vw; }
+  .preview-doc{ padding:22px 18px; font-size:14.5px; }
+  /* Confirm dialog body rows: keep key/value readable when narrow */
+  .bsce-key{ flex-basis:78px; font-size:11px; }
+  .bsce-row{ font-size:13.5px; }
+  /* Usage/meta pills: avoid overflow in the wrapped header */
+  .usage-track{ width:38px; }
+}
+
 </head>
 <body>
 
@@ -754,6 +847,7 @@ a.src-chip:hover{border-color:var(--bs-green);color:var(--bs-green-dim);backgrou
     <div class="suggest-row" id="suggestRow"></div>
     <!-- >>> v1.2: browse-all entry into the prompt library (#5) -->
     <div class="browse-link" id="browseLink"><i class="ti ti-books"></i>Browse the full prompt library</div>
+    <div class="ob-reopen" id="obReopen"><i class="ti ti-help-circle"></i>What can this assistant do?</div>
   </div>
 </div>
 
@@ -832,6 +926,26 @@ a.src-chip:hover{border-color:var(--bs-green);color:var(--bs-green-dim);backgrou
       <button type="button" class="rcp-btn rcp-btn-cancel" id="rcpCancel">Cancel</button>
       <div class="rcp-spacer"></div>
       <button type="button" class="rcp-btn rcp-btn-save" id="rcpSave">Save recipe</button>
+    </div>
+  </div>
+</div>
+
+<!-- >>> v1.8.2: First-run onboarding. Shown once per user (localStorage flag),
+     highlights the differentiators non-seat-holders won't expect. Dismissible;
+     re-openable from the welcome screen. App-scoped; populated by JS. -->
+<div id="obOverlay" class="ob-overlay" role="presentation">
+  <div class="ob-dialog" role="dialog" aria-modal="true" aria-labelledby="obTitle" tabindex="-1">
+    <div class="ob-head">
+      <div class="ob-logo">BS</div>
+      <div>
+        <div class="ob-title" id="obTitle">What this assistant can do</div>
+        <div class="ob-sub">A few things it does that other AI tools can't.</div>
+      </div>
+    </div>
+    <div class="ob-body" id="obBody"></div>
+    <div class="ob-foot">
+      <label class="ob-dont"><input type="checkbox" id="obDont" checked> Don't show this again</label>
+      <button type="button" class="ob-btn" id="obStart">Get started</button>
     </div>
   </div>
 </div>
@@ -1828,6 +1942,49 @@ const SUGGESTIONS = {
   // On load: run one-time legacy migration but DO NOT auto-open the last chat.
   // Show the clean prompt screen instead. Past chats remain available via History.
   try { migrateV1IfPresent(); renderSuggestions(); } catch (e) {}
+
+  // >>> v1.8.2: FIRST-RUN ONBOARDING — show a one-time "what can this do" panel.
+  // Keyed per-user via whoKey() so each person sees it once. The items lead with
+  // the differentiators a non-seat-holder won't expect (internal data, file
+  // generation, write-back as you). Re-openable from the welcome screen.
+  const OB_KEY_BASE = "bsaiwidget_onboarded_v1_";
+  function obKey(){ return OB_KEY_BASE + (typeof whoKey === "function" ? whoKey() : "anon"); }
+  function obSeen(){ try { return localStorage.getItem(obKey()) === "1"; } catch(e){ return false; } }
+  function obMarkSeen(){ try { localStorage.setItem(obKey(), "1"); } catch(e){} }
+  const OB_ITEMS = [
+    { icon:"ti-database", title:"It knows your internal world", desc:"Ask about your HubSpot deals, SharePoint docs, Teams, Outlook, and Workamajig projects — it pulls from BrandStar's own systems, not just general knowledge." },
+    { icon:"ti-file-download", title:"It builds real files", desc:"Turn any answer into a formatted Word, Excel, PDF, or PowerPoint — generated in your browser, downloaded to your device." },
+    { icon:"ti-cloud-upload", title:"It saves to your SharePoint", desc:"Save a generated file straight to your own SharePoint, as you — something a standard AI tool can't do. (You confirm every save first.)" },
+    { icon:"ti-clipboard-check", title:"It can log your time & more", desc:"Draft an Outlook email, add a HubSpot note, post to Teams, or log time to your Workamajig timesheet — each with a confirm step before anything happens." },
+    { icon:"ti-list-check", title:"Recipes & prompts save you time", desc:"Open the Prompts library for ready-made prompts by role, plus official multi-step recipes you can run in one click." }
+  ];
+  (function(){
+    const ov = document.getElementById("obOverlay");
+    const body = document.getElementById("obBody");
+    const start = document.getElementById("obStart");
+    const dont = document.getElementById("obDont");
+    const reopen = document.getElementById("obReopen");
+    if (!ov || !body) return;
+    function build(){
+      body.innerHTML = "";
+      OB_ITEMS.forEach(it => {
+        const row = document.createElement("div"); row.className = "ob-item";
+        row.innerHTML = '<div class="ob-ico"><i class="ti '+it.icon+'"></i></div>' +
+          '<div><div class="ob-it-title"></div><div class="ob-it-desc"></div></div>';
+        row.querySelector(".ob-it-title").textContent = it.title;
+        row.querySelector(".ob-it-desc").textContent = it.desc;
+        body.appendChild(row);
+      });
+    }
+    function openOb(firstRun){ build(); if (dont) dont.checked = true; ov.classList.add("open"); if (!firstRun && dont) dont.parentElement.style.display = "none"; else if (dont) dont.parentElement.style.display = ""; }
+    function closeOb(){ ov.classList.remove("open"); if (dont && dont.checked) obMarkSeen(); else obMarkSeen(); /* always mark seen on close */ }
+    if (start) start.addEventListener("click", closeOb);
+    ov.addEventListener("click", e => { if (e.target === ov) closeOb(); });
+    document.addEventListener("keydown", e => { if (e.key === "Escape" && ov.classList.contains("open")) closeOb(); });
+    if (reopen) reopen.addEventListener("click", () => openOb(false));
+    // First run: show once, after a short beat so the page settles.
+    if (!obSeen()) setTimeout(() => openOb(true), 650);
+  })();
   (function(){
     const nc = document.getElementById("newChatBtn");
     if (nc) nc.addEventListener("click", function(){ clearConversation(); });
@@ -2096,6 +2253,55 @@ const SUGGESTIONS = {
   function getRecipes(){ try { const a = JSON.parse(localStorage.getItem(recipeKey()) || "[]"); return Array.isArray(a) ? a : []; } catch(e){ return []; } }
   function setRecipes(arr){ try { localStorage.setItem(recipeKey(), JSON.stringify(arr)); } catch(e){} }
 
+  // >>> v1.8.2: OFFICIAL RECIPES — a curated, read-only set published with the
+  // widget for all 100+ users. Seeds adoption: everyone gets proven multi-step
+  // workflows out of the box, without having to author their own. These are
+  // capability-honest (map to what the widget does today) and run via the same
+  // engine as personal recipes. Read-only — no edit/delete; a user can copy one
+  // into their personal recipes to customize. Pure frontend, no relay dependency.
+  const OFFICIAL_RECIPES = [
+    { name:"Prospect → outreach", steps:[
+      "Research the company I name as a sales prospect: what they do, who they sell to, recent signals, and likely pain points we could help with. Flag what to verify.",
+      "Based on that research, draft a short cold outreach email (under 120 words) — lead with something specific to them, one value point, one proof point, and a low-friction CTA. Give me 2 subject lines.",
+      "Now draft a LinkedIn connection note (under 60 words) for the same prospect — warmer, no pitch, just a credible reason to connect."
+    ]},
+    { name:"Call → recap → follow-up", steps:[
+      "Summarize the call transcript or notes I paste: 2-sentence bottom line, key decisions, action items with owners, and open questions.",
+      "From that, draft a recap email to the client/prospect: what we discussed, what we agreed, and clear next steps with owners and dates. Warm and professional.",
+      "Now pull just the action items I own into a short personal to-do list with suggested due dates."
+    ]},
+    { name:"Spreadsheet → report", steps:[
+      "I'm attaching a spreadsheet. Give me a clean report: headline summary, the key totals and averages, a breakdown by the most useful category, and notable trends or outliers. Work only from the data in the file.",
+      "Now turn that into a client-ready narrative: lead with the win, plain language, no raw metric-dumping, and end with 2-3 prioritized recommendations.",
+      "Reshape that into a tight executive summary — 5 sentences max — I could paste into an email to leadership."
+    ]},
+    { name:"Meeting prep pack", steps:[
+      "Help me prep for a meeting. I'll tell you who it's with and the goal. Give me a one-line objective, 3 talking points, 2 smart questions to ask, and anything I should verify beforehand.",
+      "Now research the company/person I'm meeting and give me a quick background brief — what they do, recent signals, and how it connects to the meeting goal. Flag what to verify.",
+      "Draft a short, friendly confirmation email for the meeting that restates the objective and what I'll bring."
+    ]},
+    { name:"Content → multi-channel", steps:[
+      "Write a first draft of the content I describe (blog post, article, or web copy) — strong hook, clear and skimmable, ends with a takeaway or CTA. Ask me for topic/audience/goal if I haven't given them.",
+      "Now repurpose that into a LinkedIn post (under 120 words) in a confident, plainspoken voice with a soft CTA.",
+      "Now give me 3 short social captions drawn from the same content, each with a clear CTA and a tasteful hashtag set."
+    ]}
+  ];
+  // Run an official recipe by passing the object directly (no localStorage index).
+  function runOfficialRecipe(rec){
+    if (!rec || !rec.steps || !rec.steps.length) return;
+    activeRecipe = rec; activeStepIdx = 0;
+    input.value = rec.steps[0];
+    closeLibrary();
+    input.focus();
+  }
+  // Copy an official recipe into the user's personal recipes so they can edit it.
+  function copyOfficialRecipe(rec){
+    const arr = getRecipes();
+    arr.unshift({ name: rec.name + " (my copy)", steps: rec.steps.slice() });
+    setRecipes(arr);
+    renderLibrary();
+  }
+
   // Active run state: which recipe and which step index we're on.
   let activeRecipe = null, activeStepIdx = -1;
 
@@ -2139,6 +2345,31 @@ const SUGGESTIONS = {
         }
       });
       card.addEventListener("click", () => runRecipe(ri));
+      libList.appendChild(card);
+    });
+
+    // >>> v1.8.2: Official recipes — curated, read-only, shipped for all users.
+    const oLbl = document.createElement("div");
+    oLbl.className = "lib-group-label recipe";
+    oLbl.innerHTML = '<i class="ti ti-rosette"></i>Official recipes';
+    libList.appendChild(oLbl);
+    OFFICIAL_RECIPES.forEach(rec => {
+      const card = document.createElement("div");
+      card.className = "recipe-card recipe-card-official";
+      const preview = (rec.steps || []).map((s,i) => (i+1) + ". " + s).join("  ");
+      card.innerHTML =
+        '<div class="rc-top"><span class="rc-title"></span>' +
+          '<span class="rc-count">' + rec.steps.length + ' steps</span>' +
+          '<span class="rc-actions">' +
+            '<button type="button" class="cpy" title="Copy to my recipes so I can edit"><i class="ti ti-copy"></i></button>' +
+          '</span>' +
+        '</div>' +
+        '<div class="rc-steps"></div>' +
+        '<div class="rc-run"><i class="ti ti-player-play"></i>Run recipe</div>';
+      card.querySelector(".rc-title").textContent = rec.name;
+      card.querySelector(".rc-steps").textContent = preview;
+      card.querySelector(".cpy").addEventListener("click", ev => { ev.stopPropagation(); copyOfficialRecipe(rec); });
+      card.addEventListener("click", () => runOfficialRecipe(rec));
       libList.appendChild(card);
     });
   }
@@ -3121,12 +3352,20 @@ const SUGGESTIONS = {
     dialog.querySelector("#bsce-confirm").addEventListener("click", confirm);
   }
 
-  function renderResult(ok, action, errMsg){
+  function renderResult(ok, action, errMsg, result){
+    // >>> v1.8.2: if the relay returned a webUrl (sharepoint_save), surface a
+    // clickable "Open in SharePoint" link so the user jumps straight to the file
+    // instead of hunting for it. No-op for actions/relays that don't return one.
+    var webUrl = (result && result.webUrl) ? String(result.webUrl) : "";
+    var linkRow = (ok && webUrl)
+      ? '<div class="bsce-result-link"><a href="'+esc(webUrl)+'" target="_blank" rel="noopener noreferrer">'+I.sharepoint+'<span>Open in SharePoint</span></a></div>'
+      : "";
     dialog.innerHTML =
       '<div class="bsce-result '+(ok?"ok":"err")+'">'+
         '<div class="bsce-result-icon">'+(ok?I.ok:I.err)+'</div>'+
         '<div class="bsce-result-title">'+(ok?"Done":"Couldn’t complete that")+'</div>'+
         '<div class="bsce-result-msg">'+(ok ? esc(successMsg(action)) : esc(errMsg||"Something went wrong. Nothing was written. Try again."))+'</div>'+
+        linkRow+
       '</div>'+
       '<div class="bsce-foot"><div class="bsce-foot-spacer"></div>'+
         '<button type="button" class="bsce-btn bsce-btn-confirm" id="bsce-done">'+(ok?"Close":"OK")+'</button>'+
@@ -3172,7 +3411,7 @@ const SUGGESTIONS = {
     if(cancel){ cancel.disabled = true; }
     var action = current;
     Promise.resolve(BSCE.executor(action))
-      .then(function(){ if(onConfirmCb){ try{ onConfirmCb(action); }catch(e){} } renderResult(true, action); })
+      .then(function(result){ if(onConfirmCb){ try{ onConfirmCb(action); }catch(e){} } renderResult(true, action, null, result); })
       .catch(function(err){ renderResult(false, action, err && err.message); });
   }
   function onKey(e){
