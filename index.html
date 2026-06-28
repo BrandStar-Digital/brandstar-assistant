@@ -71,6 +71,13 @@ v1.6 — PROMPT LIBRARY EXPANSION (frontend-only; data + comment changes)
     ?writeback=1 gate, SHARED_PASSWORD, MSAL config, relay endpoints, the
     97-prompt library, and all v1.6 features are untouched.
   ============================================================================
+  v1.8.1 — SHAREPOINT SAVE CONTRACT FIX (frontend-only; ?writeback=1 path).
+    The relay validator allow-lists `preview` fields and rejected the cosmetic
+    extras (format/size/destination) with a 400. Fix: `preview` for sharepoint_save
+    now carries ONLY fileName. Format is derived from the filename at render time;
+    size moves to a top-level `sizeLabel` (relay tolerates/ignores top-level). The
+    confirm dialog looks identical. No other action types touched. Search ">>> v1.8.1:".
+  ============================================================================
   v1.8 — SAVE TO SHAREPOINT (frontend half; flag-gated, write action).
     Adds a "Save to SharePoint…" path to the Download-as menu, shown ONLY on
     ?writeback=1. It reuses the v1.7 file engine (Word/Excel/PDF/PowerPoint and
@@ -1773,12 +1780,15 @@ const SUGGESTIONS = {
         // Destination hint. The relay resolves the user's SharePoint/OneDrive
         // target; this is a suggested folder, not a hard path.
         destinationHint: "BrandStar AI Assistant",
-        // What the user sees in the confirm dialog:
+        // >>> v1.8.1: size carried top-level (relay tolerates top-level fields).
+        // Display-only; the relay ignores it. Format is derived at render time
+        // from fileName. The `preview` object is kept MINIMAL — only fileName —
+        // because the relay validator allow-lists preview fields and rejected the
+        // extra cosmetic keys (format/size/destination) with a 400.
+        sizeLabel: sizeKB + " KB",
+        // What the user sees in the confirm dialog (minimal — relay-validated):
         preview: {
-          fileName: filename,
-          format: (filename.split(".").pop() || "").toUpperCase(),
-          size: sizeKB + " KB",
-          destination: "Your SharePoint · BrandStar AI Assistant folder"
+          fileName: filename
         }
       });
     }).catch(function(){ dlFeedback(srcEl, false, "Couldn’t prepare file"); });
@@ -3001,7 +3011,7 @@ const SUGGESTIONS = {
       sub:"Saves a copy of the generated file to your SharePoint, as you. Nothing is shared or sent — you control it from there.",
       rev:{cls:"rev-self",label:"Saved as you",icon:I.lockSelf}, verb:"Save to SharePoint", danger:false,
       dest:"Your SharePoint · BrandStar AI Assistant folder",
-      render:function(p){ return rowsCard([["File", esc(p.fileName)],["Format", esc(p.format)],["Size", esc(p.size)||muted("—")]]); }
+      render:function(p, action){ var fmt=((p.fileName||"").split(".").pop()||"").toUpperCase(); var sz=(action&&action.sizeLabel)?action.sizeLabel:""; return rowsCard([["File", esc(p.fileName)],["Format", esc(fmt)||muted("—")],["Size", esc(sz)||muted("—")]]); }
     }
   };
 
@@ -3037,7 +3047,10 @@ const SUGGESTIONS = {
   //   wmj_time_entry: project, task?, hours, date, description?
   //   teams_post    : channel, team?, message
   //   sharepoint_save (v1.8): top-level fileName, mimeType, contentBase64,
-  //                   destinationHint; preview:{ fileName, format, size, destination }.
+  //                   destinationHint, sizeLabel (display-only); preview:{ fileName }.
+  //                   (v1.8.1: preview reduced to fileName only — the relay
+  //                   validator rejects unlisted preview fields. Format is derived
+  //                   from fileName for display; sizeLabel is top-level/ignored.)
   //                   RELAY: decode contentBase64, write to the signed-in user's
   //                   SharePoint via delegated Graph (Files.ReadWrite — NOT an
   //                   application permission, per governance: the widget never has
@@ -3097,7 +3110,7 @@ const SUGGESTIONS = {
         '<span class="bsce-badge '+rev.cls+'">'+rev.icon+esc(rev.label)+'</span>'+
       '</div></div>'+
       '<div class="bsce-body"><div class="bsce-preview-label">Exactly what will be written</div>'+
-        cfg.render(p)+(cfg.dest ? destBlock(cfg.dest) : "")+
+        cfg.render(p, action)+(cfg.dest ? destBlock(cfg.dest) : "")+
       '</div>'+
       '<div class="bsce-foot">'+
         '<button type="button" class="bsce-btn bsce-btn-cancel" id="bsce-cancel">Cancel</button>'+
@@ -3185,7 +3198,7 @@ const SUGGESTIONS = {
       hubspot_note:{ type:"hubspot_note", preview:{ recordName:"Britton Marketing & Design", recordType:"Company", note:"Consolidated AI plan sent to Meg + Eri. Awaiting finance-mountain inputs." }},
       wmj_time_entry:{ type:"wmj_time_entry", preview:{ project:"BrandStar AI Assistant — Wave 1", task:"Frontend — confirm UX", hours:"2.5", date:"Jun 22, 2026", description:"Built shared confirm dialog, 5 action types, flag-gated." }},
       teams_post:{ type:"teams_post", preview:{ channel:"AI Enablement", team:"BrandStar Digital", message:"Confirm-before-execute UX for write-back Wave 1 is built and flag-gated. Lights up when the relay write endpoints land." }},
-      sharepoint_save:{ type:"sharepoint_save", fileName:"BrandStar-AI-2026-06-27.docx", mimeType:"application/vnd.openxmlformats-officedocument.wordprocessingml.document", contentBase64:"UEsDBBQAAAA=", destinationHint:"BrandStar AI Assistant", preview:{ fileName:"BrandStar-AI-2026-06-27.docx", format:"DOCX", size:"42 KB", destination:"Your SharePoint · BrandStar AI Assistant folder" }}
+      sharepoint_save:{ type:"sharepoint_save", fileName:"BrandStar-AI-2026-06-27.docx", mimeType:"application/vnd.openxmlformats-officedocument.wordprocessingml.document", contentBase64:"UEsDBBQAAAA=", destinationHint:"BrandStar AI Assistant", sizeLabel:"42 KB", preview:{ fileName:"BrandStar-AI-2026-06-27.docx" }}
     };
     window.bsceQA = function(type){ BSCE.open(SAMPLES[type || "teams_post"]); };
     console.log("[BSCE] write-back test mode on. Try: bsceQA('outlook_draft' | 'todo_create' | 'hubspot_note' | 'wmj_time_entry' | 'teams_post' | 'sharepoint_save')");
