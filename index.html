@@ -71,6 +71,18 @@ v1.6 — PROMPT LIBRARY EXPANSION (frontend-only; data + comment changes)
     ?writeback=1 gate, SHARED_PASSWORD, MSAL config, relay endpoints, the
     97-prompt library, and all v1.6 features are untouched.
   ============================================================================
+  v1.8.3 — FILE-GENERATION TELEMETRY (frontend-only; analytics enablement).
+    Fires a lightweight fire-and-forget ping to /api/widget-telemetry each time
+    a file is generated, so the analytics dashboard's filesGenerated KPI and
+    per-user file counts populate. Contract confirmed with Mark (relay deploy
+    #22): POST { event:"widget_file_generated", format, source, division?,
+    msGraphToken? } + shared-secret gate -> 204. Two fire points:
+      • deliverBlob() download branch  -> source:"download"
+      • renderResult() on a confirmed sharepoint_save {ok:true} -> "sharepoint_save"
+    Metadata ONLY (format/source/division) — no file bytes, no message content.
+    Never blocks or surfaces to the user; all failures swallowed. user resolved
+    server-side from msGraphToken (spoof-proof). Search ">>> v1.8.3:".
+  ============================================================================
   v1.8.2 — USABILITY + ADOPTION (frontend-only; no relay dependency).
     Four additive features, none touching the chat/streaming/write paths:
       1. "Open in SharePoint" link — the save success dialog now surfaces the
@@ -1599,6 +1611,8 @@ const SUGGESTIONS = {
       return;
     }
     downloadBlob(blob, filename);
+    // >>> v1.8.3: count this generated-and-downloaded file (fire-and-forget).
+    fireFileTelemetry(filename, "download");
   }
   // Read a Blob as a base64 string (no data: prefix) for relay transport.
   function blobToBase64(blob){
@@ -3301,6 +3315,50 @@ const SUGGESTIONS = {
   // shows a clean error and writes nothing. Still gated behind WRITEBACK_ENABLED —
   // the dialog can only open on ?writeback=1, so production is untouched. Reverting
   // to the stub is a one-line delete of this assignment.
+  // >>> v1.8.3: FILE-GENERATION TELEMETRY (fire-and-forget).
+  // The relay can't see client-side file generation, so we ping a lightweight
+  // sink so the analytics dashboard's filesGenerated KPI + per-user file counts
+  // populate. Contract confirmed with Mark (deploy #22):
+  //   POST /api/widget-telemetry { event:"widget_file_generated", format, source,
+  //     division?, msGraphToken? } + shared-secret gate -> 204.
+  // Metadata ONLY — no file bytes, no message content. Never blocks or surfaces
+  // to the user: any failure is swallowed. `user` is resolved server-side from
+  // msGraphToken (spoof-proof), same identity as every other event.
+  var TELEMETRY_ENDPOINT = "https://bs-widget-relay.azurewebsites.net/api/widget-telemetry";
+  var FILE_FORMATS = { docx:1, xlsx:1, pdf:1, pptx:1, md:1 };
+  function formatFromName(filename){
+    var m = String(filename||"").toLowerCase().match(/\.([a-z0-9]+)$/);
+    var ext = m ? m[1] : "";
+    if (ext === "markdown") ext = "md";
+    return FILE_FORMATS[ext] ? ext : "other";
+  }
+  // source: "download" | "sharepoint_save"
+  function fireFileTelemetry(filename, source){
+    try {
+      // Only meaningful on the live relay; harmless otherwise (failure swallowed).
+      Promise.resolve(
+        (typeof getGraphToken === "function") ? getGraphToken() : null
+      ).then(function(token){
+        var body = {
+          event: "widget_file_generated",
+          format: formatFromName(filename),
+          source: (source === "sharepoint_save") ? "sharepoint_save" : "download",
+          password: (typeof SHARED_PASSWORD !== "undefined") ? SHARED_PASSWORD : undefined
+        };
+        var div = (typeof userProfile !== "undefined" && userProfile && userProfile.division) ? userProfile.division : "";
+        if (div) body.division = div;
+        if (token) body.msGraphToken = token;
+        // Fire-and-forget: don't await, don't surface errors.
+        fetch(TELEMETRY_ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          keepalive: true
+        }).catch(function(){ /* swallow — telemetry must never affect UX */ });
+      }).catch(function(){ /* token resolution failed — skip silently */ });
+    } catch(e){ /* never throw from telemetry */ }
+  }
+
   var WRITE_ENDPOINT = "https://bs-widget-relay.azurewebsites.net/api/widget-write";
   BSCE.executor = function(action){
     return Promise.resolve(
@@ -3353,6 +3411,14 @@ const SUGGESTIONS = {
   }
 
   function renderResult(ok, action, errMsg, result){
+    // >>> v1.8.3: on a confirmed successful SharePoint save, count the generated
+    // file with source "sharepoint_save" (fire-and-forget). Only on ok + the
+    // sharepoint_save type, and only on the real write result — never on dialog
+    // render alone (a green dialog is not proof of a write; {ok:true} is).
+    if (ok && action && action.type === "sharepoint_save"){
+      var fn = (action.preview && action.preview.fileName) ? action.preview.fileName : action.fileName;
+      fireFileTelemetry(fn, "sharepoint_save");
+    }
     // >>> v1.8.2: if the relay returned a webUrl (sharepoint_save), surface a
     // clickable "Open in SharePoint" link so the user jumps straight to the file
     // instead of hunting for it. No-op for actions/relays that don't return one.
