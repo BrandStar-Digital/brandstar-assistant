@@ -768,10 +768,19 @@ async function loadData(){
     const url = ANALYTICS_ENDPOINT + "?from=" + encodeURIComponent(r.from) + "&to=" + encodeURIComponent(r.to)
               + (divFilterVal!=="all" ? ("&division=" + encodeURIComponent(divFilterVal)) : "");
     const res = await fetch(url, {
-      headers: Object.assign({ "Content-Type":"application/json" }, token ? { Authorization:"Bearer "+token } : {}),
-      // shared-secret transition gate sent as a header the relay checks
-      // (kept out of the URL so it isn't logged in browser history)
+      headers: Object.assign(
+        { "Content-Type":"application/json" },
+        token ? { Authorization:"Bearer "+token } : {},
+        // >>> FIX: Mark's /api/usage-analytics requires BOTH the Entra token AND
+        // the shared-secret transition gate (lib/auth.js accepts header
+        // 'x-widget-secret' or body.password — GET has no body, so header). This
+        // header was described in the comment below but never actually sent,
+        // which is what produced the 401. Sent as a header (not the URL) so it
+        // isn't logged in browser history.
+        (typeof SHARED_PASSWORD !== "undefined" && SHARED_PASSWORD) ? { "x-widget-secret": SHARED_PASSWORD } : {}
+      ),
     });
+    if (res.status === 401){ banner("err","The relay rejected the request credentials (401). The shared-secret or token wasn't accepted — check the relay gate."); return; }
     if (res.status === 403){ banner("err","The relay declined this request. Your account may not be authorized for analytics yet (relay-side allow-list)."); return; }
     if (!res.ok){ banner("err","Couldn't load analytics ("+res.status+"). Try Refresh; if it persists, check the relay endpoint."); return; }
     const data = await res.json();
@@ -1046,6 +1055,29 @@ function exportPdf(){
   if (typeof html2pdf === "undefined"){ alert("PDF library didn't load — refresh and try again."); return; }
   const node = $("report");
   const btn = $("exportPdfBtn"); const orig = btn.innerHTML; btn.disabled=true; btn.innerHTML='<i data-lucide="loader"></i>Working…'; if(window.lucide) lucide.createIcons();
+
+  // >>> FIX: build a title block so the exported PDF is self-identifying
+  // (report name, date range, division filter, generated date, confidential
+  // tag). Injected at the top of the captured node only for the export, then
+  // removed — it never shows in the live page.
+  const r = resolveRange();
+  const rangeLabel = (currentRange === "custom") ? (r.from + " → " + r.to)
+                    : (currentRange + "-day window (" + r.from + " → " + r.to + ")");
+  const divLabel = (typeof divFilterVal !== "undefined" && divFilterVal !== "all") ? divFilterVal : "All divisions";
+  const who = (typeof msAccount !== "undefined" && msAccount && (msAccount.name || msAccount.username)) ? (msAccount.name || msAccount.username) : "";
+  const hdr = document.createElement("div");
+  hdr.setAttribute("data-pdf-header","1");
+  hdr.style.cssText = "padding:0 0 14px;margin:0 0 18px;border-bottom:2px solid #00A872;font-family:Montserrat,Arial,sans-serif;";
+  hdr.innerHTML =
+    '<div style="font-size:20px;font-weight:800;color:#0A0E1A;letter-spacing:-0.01em;">BrandStar AI Assistant — Usage Analytics</div>' +
+    '<div style="font-size:12px;font-weight:600;color:#5A6472;margin-top:5px;">' +
+      'Range: ' + rangeLabel + '  ·  Division: ' + divLabel + '  ·  Generated: ' + stamp() +
+      (who ? ('  ·  by ' + who) : '') +
+    '</div>' +
+    '<div style="font-size:10.5px;font-weight:700;color:#B7791F;margin-top:6px;text-transform:uppercase;letter-spacing:0.04em;">Leadership — Confidential · internal adoption metrics</div>';
+  node.insertBefore(hdr, node.firstChild);
+  const cleanup = ()=>{ if (hdr && hdr.parentNode) hdr.parentNode.removeChild(hdr); };
+
   html2pdf().set({
     margin:[8,8,8,8],
     filename:"BrandStar-AI-Usage-"+stamp()+".pdf",
@@ -1054,8 +1086,8 @@ function exportPdf(){
     jsPDF:{ unit:"mm", format:"a4", orientation:"portrait" },
     pagebreak:{ mode:["avoid-all","css","legacy"] }
   }).from(node).save()
-    .then(()=>{ btn.disabled=false; btn.innerHTML=orig; if(window.lucide) lucide.createIcons(); })
-    .catch(()=>{ btn.disabled=false; btn.innerHTML=orig; if(window.lucide) lucide.createIcons(); alert("Couldn't generate the PDF."); });
+    .then(()=>{ cleanup(); btn.disabled=false; btn.innerHTML=orig; if(window.lucide) lucide.createIcons(); })
+    .catch(()=>{ cleanup(); btn.disabled=false; btn.innerHTML=orig; if(window.lucide) lucide.createIcons(); alert("Couldn't generate the PDF."); });
 }
 function exportXlsx(){
   if (typeof XLSX === "undefined"){ alert("Excel library didn't load — refresh and try again."); return; }
