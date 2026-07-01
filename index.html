@@ -71,6 +71,20 @@ v1.6 — PROMPT LIBRARY EXPANSION (frontend-only; data + comment changes)
     ?writeback=1 gate, SHARED_PASSWORD, MSAL config, relay endpoints, the
     97-prompt library, and all v1.6 features are untouched.
   ============================================================================
+  v1.8.4 — PR & ORGANIC-SOCIAL SUPPORT (frontend-only; no relay dependency).
+    Additive support for Kreps PR & Marketing, now active on the widget. No new
+    modes, connectors, or ?writeback change; chat/streaming/write paths untouched.
+      1. Two PR-native official recipes added to OFFICIAL_RECIPES:
+         • "Press release → media rollout" — wire-ready release -> AP-tightened
+           ~400w + alt headline -> media pitch email + LinkedIn post + 2 captions.
+         • "Coverage → client win" — distill earned coverage -> client recap ->
+           organic social amplification set.
+      2. Tightened the existing "Press release draft" library prompt to lock
+         newsroom conventions (FOR IMMEDIATE RELEASE, dateline, inverted-pyramid
+         lead, quote/boilerplate discipline, ### close, AP style).
+    The full Kreps PR/social prompt set (v1.6) is otherwise unchanged. Search
+    ">>> v1.8.4:".
+  ============================================================================
   v1.8.3 — FILE-GENERATION TELEMETRY (frontend-only; analytics enablement).
     Fires a lightweight fire-and-forget ping to /api/widget-telemetry each time
     a file is generated, so the analytics dashboard's filesGenerated KPI and
@@ -1266,7 +1280,7 @@ const SUGGESTIONS = {
 
     // ---- Kreps PR & Marketing ----
     { title:"Press release draft", mode:"write", divisions:["Kreps","Marketing"], roles:["Marketing","Account"], desc:"A clean, newsroom-ready press release.",
-      prompt:"Draft a press release for the announcement I describe. Standard structure: strong headline, dateline, compelling lead, supporting detail, a quote (mark where to confirm wording), boilerplate placeholder, and contact line. Newsworthy, not promotional." },
+      prompt:"Draft a wire-ready press release for the announcement I describe. Use standard newsroom structure: FOR IMMEDIATE RELEASE, a strong headline (and optional subhead), a dateline (CITY, State — Month Day, Year), an inverted-pyramid lead that puts the news first, supporting detail, one or two quotes (mark where to confirm exact wording and attribution), a boilerplate 'About' paragraph placeholder, a media contact block, and close with '###'. AP style, newsworthy not promotional — flag anything you need me to confirm." },  /* >>> v1.8.4: tightened to lock newsroom conventions */
     { title:"Media pitch to a journalist", mode:"write", divisions:["Kreps","Marketing"], roles:["Marketing","Account"], desc:"A short, hook-led pitch that earns coverage.",
       prompt:"Write a short media pitch to a journalist for the story I describe. Lead with why it's relevant to their beat and timely now, the hook in 1-2 sentences, and what we can offer (interview, data, exclusive). Under 150 words, no fluff." },
     { title:"Talking points / spokesperson prep", mode:"write", divisions:["Kreps","Marketing"], roles:["Account","Marketing"], desc:"Crisp talking points for an interview or statement.",
@@ -2299,6 +2313,17 @@ const SUGGESTIONS = {
       "Write a first draft of the content I describe (blog post, article, or web copy) — strong hook, clear and skimmable, ends with a takeaway or CTA. Ask me for topic/audience/goal if I haven't given them.",
       "Now repurpose that into a LinkedIn post (under 120 words) in a confident, plainspoken voice with a soft CTA.",
       "Now give me 3 short social captions drawn from the same content, each with a clear CTA and a tasteful hashtag set."
+    ]},
+    /* >>> v1.8.4: PR-native official recipes for Kreps PR & Marketing */
+    { name:"Press release → media rollout", steps:[
+      "Draft a wire-ready press release for the announcement I describe. Use standard newsroom structure: FOR IMMEDIATE RELEASE, a strong headline and optional subhead, a dateline (CITY, State — Month Day, Year), an inverted-pyramid lead that puts the news first, supporting detail, one or two quotes (mark where to confirm exact wording and attribution), a boilerplate 'About' paragraph placeholder, a media contact block, and close with '###'. Newsworthy, not promotional — flag anything you need me to confirm.",
+      "Now tighten it to a clean ~400 words in AP style, and give me one alternate headline and one subhead option.",
+      "Now build the rollout from it: (a) a short media pitch email to a journalist — subject line, a one-paragraph hook tied to their beat, the news in one line, and what we can offer (interview, data, assets); and (b) a LinkedIn announcement post plus 2 short social captions drawn from the release, each with a clear CTA."
+    ]},
+    { name:"Coverage → client win", steps:[
+      "I'll paste or describe a piece of media coverage we earned for a client (headline, outlet, link context, or the clip text). Pull the essentials: outlet, date, angle, the key quotes or mentions of the client, and the reach/relevance in one line. Work only from what I give you; flag anything to verify.",
+      "Now draft a client-facing coverage recap they can circulate internally: lead with the win, what ran and where, why it matters, and a warm line teeing up what's next. Client-ready tone.",
+      "Now give me an organic social amplification set celebrating the coverage: a LinkedIn post and 2 short captions (platform-appropriate), sharing the placement without sounding boastful, each with a light CTA. Note if I should tag the outlet."
     ]}
   ];
   // Run an official recipe by passing the object directly (no localStorage index).
