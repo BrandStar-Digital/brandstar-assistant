@@ -71,6 +71,23 @@ v1.6 — PROMPT LIBRARY EXPANSION (frontend-only; data + comment changes)
     ?writeback=1 gate, SHARED_PASSWORD, MSAL config, relay endpoints, the
     97-prompt library, and all v1.6 features are untouched.
   ============================================================================
+  v1.8.5 — MARKIFACT REPORTING RECIPE + ACCESS GATE (frontend-only).
+    Adds the client-reporting workflow (live paid-media/analytics pulls) and a
+    visibility gate so only authorized people see it. Inert until Mark wires the
+    Markifact MCP on the relay; nothing here calls a new endpoint by itself.
+      1. New official recipe "Client monthly report" (pull -> client narrative ->
+         exec summary + downloadable file) and two library prompts ("Client
+         meeting prep — live pull", "Campaign / MTD snapshot — live pull").
+      2. Access gate — MARKIFACT_ACCESS { departments[], emails[] } + canUseMarkifact().
+         Hard-hides the recipe AND the two prompts from anyone not on the list.
+         Currently: departments digital/britton/trefoil + Mark, Jessica, Alex,
+         and Heidi by email. NOTE: Heidi is on trefoilgroup.com (different domain);
+         if she signs in as an external/guest her UPN won't match this string —
+         confirm her actual sign-in identity with Joel/Mark (see reply notes).
+      3. FRONTEND VISIBILITY ONLY. The real access boundary is the relay — this
+         list must mirror the relay's Markifact allow-list or people see a recipe
+         they can't run. Search ">>> v1.8.5:".
+  ============================================================================
   v1.8.4 — PR & ORGANIC-SOCIAL SUPPORT (frontend-only; no relay dependency).
     Additive support for Kreps PR & Marketing, now active on the widget. No new
     modes, connectors, or ?writeback change; chat/streaming/write paths untouched.
@@ -1303,6 +1320,12 @@ const SUGGESTIONS = {
       prompt:"Write a LinkedIn post (under 120 words) in a confident, plainspoken voice for a South Florida B2B audience. Lead with a pain point, give one concrete result, end with a soft CTA to DM. I'll give you the topic — ask if I haven't." },
     { title:"Paid media performance readout", mode:"summarize", divisions:["Digital","Marketing"], roles:["Marketing","Account"], desc:"Translate paid campaign numbers into plain language.",
       prompt:"I'll paste paid media performance data (or attach a CSV/Excel export). Give me a plain-language readout: what's working, what's underperforming, budget pacing, and 3 prioritized recommendations. Lead with the bottom line." },
+    /* >>> v1.8.5: Markifact live-data prompts. access:"markifact" hard-gates them
+       to the MARKIFACT_ACCESS list — hidden entirely for everyone else. */
+    { title:"Client meeting prep — live pull", mode:"research", divisions:["Digital","Marketing"], roles:["ClientServices","Account","Marketing"], access:"markifact", desc:"Pull a client's recent live performance across channels for a meeting.",
+      prompt:"I have a client meeting coming up for [CLIENT]. Pull their marketing performance from our connected analytics (Google Ads, Meta, GA4 — whatever we have connected for them) for the last 30 days. Give me a meeting-ready brief: headline performance by channel, what's up or down vs. the prior period if available, spend and budget pacing, top-performing campaigns, and 2-3 things worth flagging with the client. State the exact date range and which accounts/platforms the numbers came from, and flag anything you couldn't find a connection for." },
+    { title:"Campaign / MTD snapshot — live pull", mode:"research", divisions:["Digital","Marketing"], roles:["ClientServices","Account","Marketing"], access:"markifact", desc:"Live month-to-date or campaign performance, by channel and campaign.",
+      prompt:"Pull [CLIENT]'s paid media and analytics performance for [PERIOD — e.g. month-to-date, last 30 days, or a named campaign]. Break it out by channel and by campaign: spend, impressions, clicks, conversions, and cost-per-result where available. Lead with the bottom line — what's working, what's underperforming, and budget pacing. Name the exact date range and the source accounts. Keep it factual and read-only." },
     { title:"Website / landing page CRO ideas", mode:"brainstorm", divisions:["Digital","Marketing"], roles:["Marketing"], desc:"Conversion ideas for a page.",
       prompt:"For the web page or landing page I describe (or paste the copy/URL context), suggest 6 conversion-rate improvements — headline, structure, trust signals, CTA, friction. Prioritize them by likely impact and tell me which to test first." },
 
@@ -2148,6 +2171,40 @@ const SUGGESTIONS = {
 
   function userDivisionKey(){ return divisionKeyFromDepartment(userProfile.department) || null; }
 
+  // ==========================================================================
+  // >>> v1.8.5: MARKIFACT REPORTING ACCESS — FRONTEND VISIBILITY ONLY.
+  // This controls who SEES the Markifact reporting recipe + prompts. It is NOT
+  // the real access boundary — the relay (Mark) enforces actual Markifact reach.
+  // This list MUST mirror the relay's Markifact allow-list, or a person will see
+  // the recipe here but get denied data when they run it.
+  //
+  // Two ways to grant access:
+  //   departments[] — whole brand/dept, matched as a case-insensitive substring
+  //                   of the user's Graph department.
+  //   emails[]      — specific individuals, matched exactly against their M365
+  //                   sign-in address (Entra username).
+  // ==========================================================================
+  const MARKIFACT_ACCESS = {
+    departments: ["digital", "britton", "trefoil"],   // BrandStar Digital, Britton, Trefoil
+    emails: [
+      "mark@brandstar.com",          // Mark Alfieri — testing
+      "jsteinweg@brandstar.com",     // Jessica Steinweg — BrandStar Entertainment marketing
+      "alexl@brandstar.com",         // Alex L. — BrandStar Entertainment marketing
+      "hsmith@trefoilgroup.com"      // Heidi Smith — Trefoil Group (see cross-domain note in v1.8.5 header)
+    ]
+  };
+  // The M365 sign-in address (Entra UPN) — the reliable per-person identity key.
+  function currentUserEmail(){
+    return (msAccount && msAccount.username) ? String(msAccount.username).toLowerCase() : null;
+  }
+  function canUseMarkifact(){
+    const dept = (userProfile.department || "").toLowerCase();
+    if (dept && MARKIFACT_ACCESS.departments.some(d => dept.indexOf(d) >= 0)) return true;
+    const email = currentUserEmail();
+    if (email && MARKIFACT_ACCESS.emails.some(e => String(e).toLowerCase() === email)) return true;
+    return false;
+  }
+
   // The agency brands (Kreps, Trefoil, Britton, Digital) all sit under the
   // "Marketing" division for Graph-department ranking. So a Marketing user
   // should see brand-tagged prompts as "theirs." This expands a division key
@@ -2218,6 +2275,8 @@ const SUGGESTIONS = {
     const dk = userDivisionKey();
     const term = libSearchTerm.trim().toLowerCase();
     let items = PROMPT_LIBRARY.slice();
+    // >>> v1.8.5: hard-hide Markifact-access prompts from users not on the access list.
+    if (!canUseMarkifact()) items = items.filter(i => i.access !== "markifact");
     if (libModeFilter !== "all") items = items.filter(i => i.mode === libModeFilter);
     if (libRoleFilter !== "all") items = items.filter(i => i.roles.includes(libRoleFilter) || i.roles.includes("all"));
     if (term) items = items.filter(i =>
@@ -2324,6 +2383,14 @@ const SUGGESTIONS = {
       "I'll paste or describe a piece of media coverage we earned for a client (headline, outlet, link context, or the clip text). Pull the essentials: outlet, date, angle, the key quotes or mentions of the client, and the reach/relevance in one line. Work only from what I give you; flag anything to verify.",
       "Now draft a client-facing coverage recap they can circulate internally: lead with the win, what ran and where, why it matters, and a warm line teeing up what's next. Client-ready tone.",
       "Now give me an organic social amplification set celebrating the coverage: a LinkedIn post and 2 short captions (platform-appropriate), sharing the placement without sounding boastful, each with a light CTA. Note if I should tag the outlet."
+    ]},
+    /* >>> v1.8.5: Markifact reporting recipe. access:"markifact" hides this card
+       from anyone not on the MARKIFACT_ACCESS list. Inert until Mark wires the
+       Markifact MCP on the relay. */
+    { name:"Client monthly report", access:"markifact", steps:[
+      "Pull [CLIENT]'s full performance for [MONTH] across every connected channel (Google Ads, Meta, GA4, etc.). Give me the complete data set — by channel and by campaign: spend, impressions, clicks, conversions, CTR, CPC/CPA, and any conversion value available. State the exact date range and list which accounts/platforms you pulled from. Flag anything missing. Read-only — just report the data.",
+      "Now turn that into a client-ready monthly report: lead with the headline result, summarize each channel in plain language, call out wins and month-over-month changes if available, and end with 2-3 prioritized recommendations for next month. Write it for the client to read — no raw metric-dumping.",
+      "Give me a tight one-page executive summary of that report — 5-6 sentences an account lead or client can scan. Then format the full report so I can download it as a Word doc or save it to SharePoint."
     ]}
   ];
   // Run an official recipe by passing the object directly (no localStorage index).
@@ -2394,6 +2461,8 @@ const SUGGESTIONS = {
     oLbl.innerHTML = '<i class="ti ti-rosette"></i>Official recipes';
     libList.appendChild(oLbl);
     OFFICIAL_RECIPES.forEach(rec => {
+      // >>> v1.8.5: hide access-gated recipes from users not on that access list.
+      if (rec.access === "markifact" && !canUseMarkifact()) return;
       const card = document.createElement("div");
       card.className = "recipe-card recipe-card-official";
       const preview = (rec.steps || []).map((s,i) => (i+1) + ". " + s).join("  ");
