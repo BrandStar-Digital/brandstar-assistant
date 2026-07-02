@@ -80,10 +80,11 @@ v1.6 — PROMPT LIBRARY EXPANSION (frontend-only; data + comment changes)
          meeting prep — live pull", "Campaign / MTD snapshot — live pull").
       2. Access gate — MARKIFACT_ACCESS { departments[], emails[] } + canUseMarkifact().
          Hard-hides the recipe AND the two prompts from anyone not on the list.
-         Currently: departments digital/britton/trefoil + Mark, Jessica, Alex,
-         and Heidi by email. NOTE: Heidi is on trefoilgroup.com (different domain);
-         if she signs in as an external/guest her UPN won't match this string —
-         confirm her actual sign-in identity with Joel/Mark (see reply notes).
+         LAUNCH GATE = BrandStar Digital only, to match the live relay (deploy #24
+         attaches Markifact for BSD users only). The wider cohort (Britton, Trefoil,
+         Jessica, Alex, Heidi) is staged in-code, commented — re-enable line-by-line
+         when Mark widens the relay gate to match. Heidi is on trefoilgroup.com; if
+         she signs in as a guest her UPN won't match — confirm with Joel/Mark first.
       3. FRONTEND VISIBILITY ONLY. The real access boundary is the relay — this
          list must mirror the relay's Markifact allow-list or people see a recipe
          they can't run. Search ">>> v1.8.5:".
@@ -2184,14 +2185,21 @@ const SUGGESTIONS = {
   //   emails[]      — specific individuals, matched exactly against their M365
   //                   sign-in address (Entra username).
   // ==========================================================================
+  // >>> v1.8.5: NARROWED TO MATCH THE LIVE RELAY. Mark's relay (deploy #24)
+  // attaches Markifact ONLY for BrandStar Digital users. The frontend gate mirrors
+  // that so nobody sees a recipe that returns no data. The wider cohort below is
+  // PRESERVED and ready — re-enable each line the moment Mark widens the relay gate
+  // to match. Frontend visibility must never exceed relay access.
   const MARKIFACT_ACCESS = {
-    departments: ["digital", "britton", "trefoil"],   // BrandStar Digital, Britton, Trefoil
+    departments: ["digital"],        // BrandStar Digital only (matches relay gate)
     emails: [
-      "mark@brandstar.com",          // Mark Alfieri — testing
-      "jsteinweg@brandstar.com",     // Jessica Steinweg — BrandStar Entertainment marketing
-      "alexl@brandstar.com",         // Alex L. — BrandStar Entertainment marketing
-      "hsmith@trefoilgroup.com"      // Heidi Smith — Trefoil Group (see cross-domain note in v1.8.5 header)
+      "mark@brandstar.com"           // Mark Alfieri — testing
+      // --- Staged for when Mark widens the relay gate to match: ---
+      // "jsteinweg@brandstar.com",  // Jessica Steinweg — BrandStar Entertainment marketing
+      // "alexl@brandstar.com",      // Alex L. — BrandStar Entertainment marketing
+      // "hsmith@trefoilgroup.com"   // Heidi Smith — Trefoil Group (confirm guest UPN first)
     ]
+    // departments staged for widen: "britton", "trefoil"
   };
   // The M365 sign-in address (Entra UPN) — the reliable per-person identity key.
   function currentUserEmail(){
