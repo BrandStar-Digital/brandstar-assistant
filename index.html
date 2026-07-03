@@ -257,7 +257,7 @@ v1.6 — PROMPT LIBRARY EXPANSION (frontend-only; data + comment changes)
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { height: 100%; }
+html, body { height: 100%; overflow-x: hidden; max-width: 100%; }
 body {
   font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background: var(--aibios-bg);
@@ -736,6 +736,8 @@ a.src-chip:hover{border-color:var(--bs-green);color:var(--bs-green-dim);backgrou
   .ob-dont{justify-content:center;}
 }
 
+/* ==========================================================================
+   >>> v1.7.1: MOBILE LAYOUT PASS (CSS-only). Fixes the narrow-viewport header
    collision, input-bar placeholder clipping, meta-row wrap, and bubble
    density on narrow viewports. Nothing here runs on desktop (>640px), and
    no IDs, scripts, or desktop rules are changed.
