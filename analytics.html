@@ -484,10 +484,11 @@ const GRAPH_SCOPES = ["User.Read"];
 // Preferred long-term: gate on an Entra security group (set LEADERSHIP_GROUP_ID
 // and check group claims). For v1, an email allow-list is the simplest lock.
 const LEADERSHIP_EMAILS = [
-  "mark@brandstar.com",    // Mark Alfieri
-  "dvital@brandstar.com",  // Devon Vital
-  "ssoni@brandstar.com",   // Sarah Soni
-  "srand@brandstar.com"    // Seth Rand
+  "mark@brandstar.com",      // Mark Alfieri — legacy/alias
+  "galfieri@brandstar.com",  // Mark Alfieri — official Entra UPN
+  "dvital@brandstar.com",    // Devon Vital
+  "ssoni@brandstar.com",     // Sarah Soni
+  "srand@brandstar.com"      // Seth Rand
 ];
 const LEADERSHIP_GROUP_ID = ""; // optional: set to gate on an Entra group instead
 
