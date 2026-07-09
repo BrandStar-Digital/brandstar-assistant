@@ -71,7 +71,29 @@ v1.6 — PROMPT LIBRARY EXPANSION (frontend-only; data + comment changes)
     ?writeback=1 gate, SHARED_PASSWORD, MSAL config, relay endpoints, the
     97-prompt library, and all v1.6 features are untouched.
   ============================================================================
-  v1.8.5 — MARKIFACT REPORTING RECIPE + ACCESS GATE (frontend-only).
+  v1.8.6 — CHAT UX PASS + CRAWL-READY SYSTEM PROMPT (frontend-only).
+    Addresses SEO-team + VP feedback (Adrian, Cara). Four changes; none touch
+    write-back, streaming, MSAL, SHARED_PASSWORD, relay endpoints, or the library.
+    Search ">>> v1.8.6:".
+      1. AUTO-GROW INPUT. The chat input was a single-line <input> that could not
+         expand (the "FB Messenger bug" report). It is now a <textarea rows=1>
+         that grows with typed/pasted content up to 168px then scrolls. Enter
+         still sends; Shift+Enter = newline. Reset to one line after send.
+      2. LONG-RESPONSE / WIDE-SCREEN READABILITY. Assistant bubbles were hard-
+         capped at 690px, cramming long SEO audits/tables into a narrow column and
+         wasting width on large monitors. Each message row is now centered and runs
+         to a 1040px reading ceiling; assistant bubble fills that column. User
+         bubbles stay compact + right-aligned (max 78%).
+      3. CRAWL-READY SYSTEM PROMPT + DIRECTIONAL LABELING. Adds URL-handling rules:
+         if a web fetch/search tool is present (relay-side, Mark), read the URL for
+         real; if not, never fabricate a page read — label URL-dependent output as
+         DIRECTIONAL / HYPOTHESIS-BASED. Fixes "could be misread as verified
+         findings." Activates automatically the moment Mark enables the relay tool
+         — NO second frontend deploy needed. Live crawl itself is a RELAY change
+         (see the handoff doc); this is only the frontend half.
+      4. Removed the leftover "BS" logo badge from the onboarding modal head
+         (carried open item; the header badge was already gone).
+  ============================================================================
     Adds the client-reporting workflow (live paid-media/analytics pulls) and a
     visibility gate so only authorized people see it. Inert until Mark wires the
     Markifact MCP on the relay; nothing here calls a new endpoint by itself.
@@ -305,9 +327,15 @@ body {
 }
 .mode-banner i { color: var(--bs-green); font-size: 16px; }
 .thread { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding: 20px 24px; }
+/* >>> v1.8.6: LONG-RESPONSE + WIDE-SCREEN READABILITY (Adrian + Cara feedback).
+   Old behavior hard-capped each assistant bubble at 690px, cramming long SEO audits
+   and tables into a narrow column while wide monitors sat empty. Each message row is
+   now centered and runs to a comfortable 1040px reading ceiling — much wider than
+   690px, but still a readable line length on ultra-wide displays. No DOM restructure:
+   the cap is applied per .message row, which append directly to #thread. */
+.message { width: 100%; max-width: 1040px; margin-left: auto; margin-right: auto; display: flex; gap: 11px; }
 .thread::-webkit-scrollbar { width: 8px; }
 .thread::-webkit-scrollbar-thumb { background: var(--aibios-border-soft); border-radius: 4px; }
-.message { display: flex; gap: 11px; }
 .avatar {
   width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800;
@@ -317,11 +345,17 @@ body {
 .bubble {
   flex: 1; background: var(--aibios-surface); padding: 14px 17px; border-radius: 14px;
   border-top-left-radius: 5px; font-size: 15px; font-weight: 500; color: var(--aibios-text);
-  line-height: 1.65; white-space: pre-wrap; word-wrap: break-word; max-width: 690px;
+  line-height: 1.65; white-space: pre-wrap; word-wrap: break-word; max-width: 100%;
   border: 1px solid var(--aibios-border);
 }
+/* >>> v1.8.6: LONG-RESPONSE READABILITY. The assistant bubble was hard-capped at 690px,
+   which crammed long SEO audits/tables into a narrow column and wasted screen width on
+   large monitors (Adrian + Cara feedback). The assistant bubble now fills the centered
+   .message row (capped at 1040px above) — a much wider, readable reading column. User
+   messages stay compact + right-aligned via .message.user .bubble below. */
+.message.assistant .bubble { max-width: 100%; }
 .message.user { flex-direction: row-reverse; }
-.message.user .bubble { background: var(--aibios-surface-2); border-top-left-radius: 14px; border-top-right-radius: 5px; flex: 0 1 auto; font-weight: 600; }
+.message.user .bubble { background: var(--aibios-surface-2); border-top-left-radius: 14px; border-top-right-radius: 5px; flex: 0 1 auto; font-weight: 600; max-width: 78%; }
 .message-actions {
   margin-top: 15px; padding-top: 13px; border-top: 1px solid var(--aibios-border);
   display: flex; gap: 7px; flex-wrap: wrap;
@@ -370,11 +404,21 @@ body {
 .input-bar { padding: 14px 24px 16px; flex-shrink: 0; border-top: 1px solid var(--aibios-border); }
 .input-row {
   background: var(--aibios-surface); border: 1px solid var(--aibios-border-soft);
-  border-radius: 13px; padding: 11px 13px; display: flex; align-items: center; gap: 11px;
+  border-radius: 13px; padding: 11px 13px; display: flex; align-items: flex-end; gap: 11px;
   transition: border-color 200ms var(--ease), box-shadow 200ms var(--ease);
 }
 .input-row:focus-within { border-color: var(--bs-green); box-shadow: 0 0 0 3px var(--bs-green-glow); }
-.input-field { flex: 1; background: transparent; border: none; color: var(--aibios-text); font-size: 14.5px; font-weight: 500; outline: none; font-family: inherit; }
+/* >>> v1.8.6: #input is now a <textarea> that auto-grows with content (Messenger-style)
+   up to a capped height, then scrolls. resize:none removes the manual drag handle;
+   the auto-grow height is driven by JS (autoGrowInput). Single-line default via rows=1. */
+.input-field {
+  flex: 1; background: transparent; border: none; color: var(--aibios-text);
+  font-size: 14.5px; font-weight: 500; outline: none; font-family: inherit;
+  resize: none; line-height: 1.5; max-height: 168px; overflow-y: auto;
+  padding: 0; margin: 0; display: block;
+}
+.input-field::-webkit-scrollbar { width: 7px; }
+.input-field::-webkit-scrollbar-thumb { background: var(--aibios-border-soft); border-radius: 4px; }
 .input-field::placeholder { color: var(--aibios-text-subtle); font-weight: 500; }
 .input-icon-btn { background: transparent; color: var(--aibios-text-subtle); border: none; cursor: pointer; font-size: 17px; opacity: 0.85; display: flex; transition: color 200ms var(--ease), opacity 200ms var(--ease); }
 .input-icon-btn:hover { color: var(--bs-green); opacity: 1; }
@@ -900,7 +944,7 @@ a.src-chip:hover{border-color:var(--bs-green);color:var(--bs-green-dim);backgrou
 <div class="input-bar">
   <div class="attach-wrap" id="attachWrap"></div>
   <div class="input-row">
-    <input type="text" class="input-field" id="input" placeholder="Ask anything, or pick a mode above...">
+    <textarea class="input-field" id="input" rows="1" placeholder="Ask anything, or pick a mode above..."></textarea>
     <!-- >>> v1.2: multi-file + xlsx (#3, #8): `multiple` enabled, .xlsx/.xls accepted -->
     <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.csv,.xlsx,.xls" multiple style="display:none">
     <button class="input-icon-btn" id="clipBtn" title="Attach PDFs, images, CSV, or Excel — several at once"><i class="ti ti-paperclip"></i></button>
@@ -982,7 +1026,6 @@ a.src-chip:hover{border-color:var(--bs-green);color:var(--bs-green-dim);backgrou
 <div id="obOverlay" class="ob-overlay" role="presentation">
   <div class="ob-dialog" role="dialog" aria-modal="true" aria-labelledby="obTitle" tabindex="-1">
     <div class="ob-head">
-      <div class="ob-logo">BS</div>
       <div>
         <div class="ob-title" id="obTitle">What this assistant can do</div>
         <div class="ob-sub">A few things it does that other AI tools can't.</div>
@@ -2730,6 +2773,24 @@ const SUGGESTIONS = {
   sendBtn.addEventListener("click", send);
 
   // ==========================================================================
+  // >>> v1.8.6: AUTO-GROW INPUT. #input is now a <textarea>. It starts at one
+  // line and grows to fit typed/pasted content up to the CSS max-height (168px),
+  // then scrolls — the fix for the "chatbox won't expand" (Messenger-style) report.
+  // Enter still sends (handler above); Shift+Enter inserts a newline naturally.
+  // ==========================================================================
+  function autoGrowInput(){
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 168) + "px";
+  }
+  input.addEventListener("input", autoGrowInput);
+  input.addEventListener("focus", autoGrowInput); // >>> v1.8.6: catch programmatic inserts (recipe/library/suggestions focus the box after setting .value)
+  // Recompute after paste (value updates on the next tick).
+  input.addEventListener("paste", () => setTimeout(autoGrowInput, 0));
+  // Expose so send()/recipe/library flows can reset height after they set .value.
+  window.__autoGrowInput = autoGrowInput;
+  autoGrowInput();
+
+  // ==========================================================================
   // >>> v1.7: VOICE INPUT — Web Speech API dictation into the #input field.
   // No library, no extra network call beyond what the browser does natively.
   // The mic button is hidden entirely when the API is unsupported (capability
@@ -3100,6 +3161,7 @@ const SUGGESTIONS = {
     // Hand off to the shared pipeline. Clear input/attachments here.
     const files = attached.slice();
     input.value = "";
+    if (window.__autoGrowInput) window.__autoGrowInput(); // >>> v1.8.6: collapse textarea back to one line
     attached = []; renderAttachChips();
     sendMessage(text, { files });
   }
@@ -3184,6 +3246,7 @@ const SUGGESTIONS = {
       "SEGMENT MODEL (how brands participate): shows are 'by invitation only.' A participating brand gets an integrated branded segment within a 30-min program, a digital version with full licensing/reproduction rights, a :30 digital short for social, a dedicated landing page on the show site, coordinated social, distribution on BrandStar.TV (24-hr OTT) and the Lifetime Live Feed (Hulu+Live TV, fuboTV, Philo, Sling), plus PR where applicable. One segment can extend into full-funnel growth across the other divisions. " +
       "ECOSYSTEM PITCH: 'Hire one partner, not ten.' A brand can be discovered on a show (Entertainment), have content produced (Studios), get full-funnel marketing (Marketing/Digital/Kreps/Britton/Trefoil), and customer communication handled (Connect) — all under one roof. Cross-division collaboration is the core BrandStar advantage. " +
       "You are a capable research and knowledge assistant as well as a BrandStar expert. Answer general knowledge questions, research topics (for TV episodes, market trends, prospective clients not yet in our CRM, etc.), and help with writing and analysis using your full knowledge — don't refuse a question just because it isn't about BrandStar. Use the HubSpot tools when the question is about existing BrandStar deals, contacts, or companies. When the user attaches a CSV or Excel file, work directly with the data — summarize it, total or compute columns, find duplicates or anomalies, compare rows, or reformat as asked. For current pricing, internal client lists, or staff details specifically, don't guess from memory — note you'd confirm against current systems. When researching prospects or topics from your own knowledge, be helpful and thorough, and flag anything that should be verified. " +
+      "LIVE URLS AND WEB CONTENT: If a web fetch or web search tool is available to you, use it to read the actual content of any URL the user provides (competitor pages, client pages, articles) before analyzing it, and base your analysis on what you actually retrieved. If no such tool is available, or a fetch fails, do NOT invent or infer the contents of a page you have not read: say plainly that you could not access the live page, and clearly label any analysis as DIRECTIONAL / HYPOTHESIS-BASED (based on category norms, not a verified read). This is especially important for audit-style tasks — SEO audits, E-E-A-T scoring, content-gap analysis, competitor comparisons — where a fabricated read could be mistaken for a verified finding. Never present scores, gap lists, or page-specific findings as confirmed unless they came from content you actually retrieved. When output is directional, lead with a one-line flag to that effect and, where useful, tell the user what to run to confirm it (e.g. a Semrush pull or a manual crawl). " +
       (DIVISION_CONTEXT[divisionKeyFromDepartment(userProfile.department) || DEMO_USER.division]||"") + " " + MODES[mode].sys;
 
     try {
